@@ -1,36 +1,40 @@
 use std::str::FromStr;
 
 #[derive(Debug,Hash,PartialEq,PartialOrd,Eq,Ord,Clone)]
-struct Name {
+pub struct Name {
     name: String,
+}
+
+fn first_label(name: &str) -> &str {
+    match name.find(".") {
+        Some(index) => &name[..index],
+        None => name,
+    }
 }
 
 impl Name {
     fn label(&self) -> &str {
-        if let Some(index) = self.name.find('.') {
-            let (label, _) = self.name.split_at(index);
-            label
-        } else {
-            self.name.as_ref()
-        }
+        first_label(&self.name)
     }
 
     fn parent(&self) -> Option<Name> {
-        if let Some(index) = self.name.find('.') {
-            let (_, p) = self.name.split_at(index + 1);
-            return Some(Name { name: String::from(p) });
+        match self.name.find(".") {
+            Some(index) => Some(Name { name: String::from(&self.name[(index + 1)..]) }),
+            None => {
+                match self.name.len() {
+                    0 => None,
+                    _ => Some(Name { name: String::from("") }),
+                }
+            }
         }
-        if self.name.len() > 0 {
-            return Some( Name { name: String::from("") });
-        }
-        None
     }
 }
 
 #[derive(Debug,PartialEq)]
-enum NameError {
-    NameTooLong(usize),
-    LabelTooLong(usize)
+pub enum NameError {
+    NameTooLong(usize, String),
+    LabelTooLong(usize, String),
+    EmptyNonRootLabel,
 }
 
 impl FromStr for Name {
@@ -38,14 +42,27 @@ impl FromStr for Name {
     fn from_str(s: &str) -> Result<Name, NameError> {
         let name = String::from(s);
         if name.len() > 255 {
-            return Err(NameError::NameTooLong(name.len()));
+            return Err(NameError::NameTooLong(name.len(), name));
         }
-        let result = Name { name: name };
-        let label_len = result.label().len();
-        if label_len > 63 {
-            return Err(NameError::LabelTooLong(label_len));
+
+        if name.len() > 0 {
+            let mut name_part = s;
+            loop {
+                let label = first_label(&name_part);
+                if label.len() > 63 {
+                    return Err(NameError::LabelTooLong(label.len(), String::from(label)));
+                }
+                if label.len() == 0 {
+                    return Err(NameError::EmptyNonRootLabel);
+                }
+                if label.len() == name_part.len() {
+                    // Non-empty last element
+                    break;
+                }
+                name_part = &name_part[(label.len() + 1)..];
+            }
         }
-        Ok(result)
+        Ok(Name { name: name })
     }
 }
 
@@ -99,13 +116,13 @@ mod tests {
     fn long_name_is_invalid() {
         let raw_name = String::from_utf8(vec!['A' as u8; 256]).unwrap();
         let result = raw_name.parse::<Name>();
-        assert_eq!(result.err(), Some(NameError::NameTooLong(256)));
+        assert_eq!(result.err(), Some(NameError::NameTooLong(256, raw_name)));
     }
 
     #[test]
     fn long_first_label_is_invalid() {
         let raw_name = String::from_utf8(vec!['A' as u8; 150]).unwrap();
         let result = raw_name.parse::<Name>();
-        assert_eq!(result.err(), Some(NameError::LabelTooLong(150)));
+        assert_eq!(result.err(), Some(NameError::LabelTooLong(150, raw_name)));
     }
 }
