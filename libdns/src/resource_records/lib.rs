@@ -1,4 +1,3 @@
-pub mod names;
 
 #[cfg(test)]
 mod tests {
