@@ -1,3 +1,4 @@
+use std::fmt;
 use std::str::FromStr;
 
 #[derive(Debug,Hash,PartialEq,PartialOrd,Eq,Ord,Clone)]
@@ -63,6 +64,12 @@ impl FromStr for Name {
             }
         }
         Ok(Name { name: name })
+    }
+}
+
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}.", self.name)
     }
 }
 

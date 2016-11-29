@@ -1,22 +1,38 @@
-enum Type {
-    A,
-    NS,
-    CNAME,
-    SOA,
-    MX,
-    TXT
-}
+use std::fmt;
+use super::names::Name;
 
-enum Class {
-    IN,
-    CH
-}
-
-trait ResourceRecord {
+pub trait RecordType {
     fn name(&self) -> &str;
-    fn type(&self) -> Type;
-    fn class(&self) -> Class;
+    fn value(&self) -> u16;
+}
+
+#[derive(Debug,PartialEq)]
+pub enum RecordClass {
+    IN,
+}
+
+pub trait ResourceRecord {
+    type RType: RecordType;
+    type DType;
+
+    fn name(&self) -> &Name;
+    fn rr_type(&self) -> Self::RType;
+    fn rr_class(&self) -> &RecordClass;
     fn ttl(&self) -> i32;
-    fn rdlength(&self) -> i16;
-    fn rdata(&self) -> &[u8];
+
+    fn data(&self) -> &Self::DType;
+}
+
+impl fmt::Display for RecordClass {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            RecordClass::IN => write!(f, "IN"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {}
 }
