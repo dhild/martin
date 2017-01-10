@@ -1,6 +1,7 @@
-use std::net::Ipv4Addr;
-use ::rr::*;
+
 use ::names::Name;
+use ::rr::*;
+use std::net::Ipv4Addr;
 
 #[derive(Debug)]
 pub struct ARecord {
