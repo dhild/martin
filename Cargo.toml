@@ -1,5 +1,5 @@
 [package]
-name = "rustdns"
+name = "dns-rs"
 version = "0.1.0"
 authors = ["D. Ryan Hild <d.ryan.hild@gmail.com>"]
 repository = "https://github.com/dhild/dns-rs.git"
@@ -7,6 +7,6 @@ homepage = "https://github.com/dhild/dns-rs.git"
 license = "MIT"
 readme = "README.md"
 documentation = "http://dhild.github.io/dns-rs/"
-description = "Domain name server and utilities."
+description = "DNS library for dealing with resource records."
+
 [dependencies]
-libdns = { path = "libdns" }
