@@ -1,4 +1,7 @@
 //! Base types for dealing with resource records.
+mod a;
+
+pub use self::a::{A, AType};
 use std::fmt;
 use super::names::Name;
 

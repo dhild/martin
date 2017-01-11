@@ -1,17 +1,18 @@
-
 use ::names::Name;
 use ::rr::*;
 use std::net::Ipv4Addr;
 
-#[derive(Debug)]
-pub struct ARecord {
+/// A host address resource record
+#[derive(Debug,Clone)]
+pub struct A {
     name: Name,
     class: Class,
     ttl: i32,
     addr: Ipv4Addr,
 }
 
-#[derive(Debug)]
+/// The `A` type has a value of `1`
+#[derive(Debug,Clone,Copy)]
 pub struct AType;
 
 impl Type for AType {
@@ -23,7 +24,7 @@ impl Type for AType {
     }
 }
 
-impl ResourceRecord for ARecord {
+impl ResourceRecord for A {
     type RRType = AType;
     type DataType = Ipv4Addr;
     fn name(&self) -> &Name {
