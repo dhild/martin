@@ -6,7 +6,7 @@ pub trait RecordType {
     fn value(&self) -> u16;
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone,Copy)]
 pub enum RecordClass {
     IN,
 }
