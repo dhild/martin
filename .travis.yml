@@ -19,6 +19,7 @@ script:
   travis-cargo --only stable doc
 after_success:
 - travis-cargo --only stable doc-upload
+- travis-cargo coveralls --no-sudo
 notifications:
   email:
     on_success: never
