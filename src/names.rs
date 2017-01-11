@@ -13,7 +13,7 @@ pub struct Name {
 }
 
 fn first_label(name: &str) -> &str {
-    match name.find(".") {
+    match name.find('.') {
         Some(index) => &name[..index],
         None => name,
     }
@@ -25,7 +25,7 @@ impl Name {
     }
 
     fn parent(&self) -> Option<Name> {
-        match self.name.find(".") {
+        match self.name.find('.') {
             Some(index) => Some(Name { name: String::from(&self.name[(index + 1)..]) }),
             None => {
                 match self.name.len() {
@@ -70,7 +70,7 @@ impl fmt::Display for Name {
 
 #[cfg(test)]
 mod tests {
-    use super::{Name, NameParseError};
+    use super::Name;
 
     #[test]
     fn root_label_is_valid() {
