@@ -6,15 +6,15 @@ use std::net::Ipv4Addr;
 #[derive(Debug)]
 pub struct ARecord {
     name: Name,
-    rrclass: RecordClass,
+    class: Class,
     ttl: i32,
     addr: Ipv4Addr,
 }
 
 #[derive(Debug)]
-pub struct ARecordType;
+pub struct AType;
 
-impl RecordType for ARecordType {
+impl Type for AType {
     fn name(&self) -> &str {
         "A"
     }
@@ -24,16 +24,16 @@ impl RecordType for ARecordType {
 }
 
 impl ResourceRecord for ARecord {
-    type RType = ARecordType;
-    type DType = Ipv4Addr;
+    type RRType = AType;
+    type DataType = Ipv4Addr;
     fn name(&self) -> &Name {
         &self.name
     }
-    fn rr_type(&self) -> ARecordType {
-        ARecordType {}
+    fn rr_type(&self) -> AType {
+        AType {}
     }
-    fn rr_class(&self) -> &RecordClass {
-        &self.rrclass
+    fn rr_class(&self) -> &Class {
+        &self.class
     }
     fn ttl(&self) -> i32 {
         self.ttl

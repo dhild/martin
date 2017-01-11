@@ -1,6 +1,12 @@
+//! Types and utilities for working with DNS names.
+
+use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
+/// Representation of a domain name
+///
+/// Domain names consist of one or more labels, broken up by the character '.'.
 #[derive(Debug,Hash,PartialEq,PartialOrd,Eq,Ord,Clone)]
 pub struct Name {
     name: String,
@@ -31,38 +37,27 @@ impl Name {
     }
 }
 
-#[derive(Debug,PartialEq)]
-pub enum NameError {
-    NameTooLong(usize, String),
-    LabelTooLong(usize, String),
-    EmptyNonRootLabel,
+/// An error returned when parsing a domain name
+#[derive(Debug,PartialEq,Clone,Copy)]
+pub struct NameParseError(());
+
+impl fmt::Display for NameParseError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self.description())
+    }
 }
 
-impl FromStr for Name {
-    type Err = NameError;
-    fn from_str(s: &str) -> Result<Name, NameError> {
-        let name = String::from(s);
-        if name.len() > 255 {
-            return Err(NameError::NameTooLong(name.len(), name));
-        }
+impl Error for NameParseError {
+    fn description(&self) -> &str {
+        "invalid domain name syntax"
+    }
+}
 
-        if name.len() > 0 {
-            let mut name_part = s;
-            loop {
-                let label = first_label(&name_part);
-                if label.len() > 63 {
-                    return Err(NameError::LabelTooLong(label.len(), String::from(label)));
-                }
-                if label.len() == 0 {
-                    return Err(NameError::EmptyNonRootLabel);
-                }
-                if label.len() == name_part.len() {
-                    // Non-empty last element
-                    break;
-                }
-                name_part = &name_part[(label.len() + 1)..];
-            }
-        }
+
+impl FromStr for Name {
+    type Err = NameParseError;
+    fn from_str(s: &str) -> Result<Name, NameParseError> {
+        let name = String::from(s);
         Ok(Name { name: name })
     }
 }
@@ -75,7 +70,7 @@ impl fmt::Display for Name {
 
 #[cfg(test)]
 mod tests {
-    use super::{Name, NameError};
+    use super::{Name, NameParseError};
 
     #[test]
     fn root_label_is_valid() {
@@ -117,19 +112,5 @@ mod tests {
         assert_eq!("com", parent2.label());
         let parent3 = parent2.parent().unwrap();
         assert_eq!("", parent3.label());
-    }
-
-    #[test]
-    fn long_name_is_invalid() {
-        let raw_name = String::from_utf8(vec!['A' as u8; 256]).unwrap();
-        let result = raw_name.parse::<Name>();
-        assert_eq!(result.err(), Some(NameError::NameTooLong(256, raw_name)));
-    }
-
-    #[test]
-    fn long_first_label_is_invalid() {
-        let raw_name = String::from_utf8(vec!['A' as u8; 150]).unwrap();
-        let result = raw_name.parse::<Name>();
-        assert_eq!(result.err(), Some(NameError::LabelTooLong(150, raw_name)));
     }
 }

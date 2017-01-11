@@ -1,32 +1,59 @@
+//! Base types for dealing with resource records.
 use std::fmt;
 use super::names::Name;
 
-pub trait RecordType {
+/// A `Type` field indicates the structure and content of a resource record.
+pub trait Type {
+    /// A short name for the type.
+    ///
+    /// # Examples
+    /// - A
+    /// - NS
+    /// - SOA
+    /// - MX
+    /// - CNAME
     fn name(&self) -> &str;
+    /// The 16-bit value uniquely assigned to this type.
     fn value(&self) -> u16;
 }
 
+/// Enum for valid `class` values from DNS resource records.
 #[derive(Debug,PartialEq,Clone,Copy)]
-pub enum RecordClass {
+pub enum Class {
+    /// The "Internet" class.
     IN,
 }
 
+/// A resource record associates a `Name` within a `Class` with `Type` dependent data.
 pub trait ResourceRecord {
-    type RType: RecordType;
-    type DType;
+    /// Each `ResourceRecord` must have a distinct `Type`.
+    type RRType: Type;
+    /// The type of data stored by this record.
+    type DataType;
 
+    /// Returns the `Name` this record applies to.
     fn name(&self) -> &Name;
-    fn rr_type(&self) -> Self::RType;
-    fn rr_class(&self) -> &RecordClass;
+    /// Returns the `Type` identifier for this record.
+    fn rr_type(&self) -> Self::RRType;
+    /// Returns the `Class` this record applies to.
+    fn rr_class(&self) -> &Class;
+    /// Returns the "time to live" for this data.
+    ///
+    /// DNS systems are expected to cache data for this length of time.
     fn ttl(&self) -> i32;
 
-    fn data(&self) -> &Self::DType;
+    /// Returns the data that this record provides.
+    ///
+    /// # Examples
+    /// For the `A` record, this would be the IPv4 address. A `CNAME` record would contain the
+    /// canonical name that is referred to by this record's name.
+    fn data(&self) -> &Self::DataType;
 }
 
-impl fmt::Display for RecordClass {
+impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            RecordClass::IN => write!(f, "IN"),
+            Class::IN => write!(f, "IN"),
         }
     }
 }
