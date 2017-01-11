@@ -10,3 +10,8 @@ documentation = "http://dhild.github.io/dns-rs/"
 description = "DNS library for dealing with resource records."
 
 [dependencies]
+clippy = {version = "*", optional = true}
+
+[features]
+default = []
+dev = ["clippy"]
