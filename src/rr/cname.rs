@@ -1,37 +1,36 @@
 use ::names::Name;
 use ::rr::{Type, Class, ResourceRecord};
-use std::net::Ipv4Addr;
 
-/// A host address resource record
+/// The canonical name for an alias
 #[derive(Debug,Clone)]
-pub struct A {
+pub struct CNAME {
     name: Name,
     class: Class,
     ttl: i32,
-    addr: Ipv4Addr,
+    cname: Name,
 }
 
-/// The `A` type has a value of `1`
+/// The `CNAME` type has a value of `5`
 #[derive(Debug,Clone,Copy)]
-pub struct AType;
+pub struct CNAMEType;
 
-impl Type for AType {
+impl Type for CNAMEType {
     fn name(&self) -> &str {
-        "A"
+        "CNAME"
     }
     fn value(&self) -> u16 {
-        1
+        5
     }
 }
 
-impl ResourceRecord for A {
-    type RRType = AType;
-    type DataType = Ipv4Addr;
+impl ResourceRecord for CNAME {
+    type RRType = CNAMEType;
+    type DataType = Name;
     fn name(&self) -> &Name {
         &self.name
     }
-    fn rr_type(&self) -> AType {
-        AType {}
+    fn rr_type(&self) -> CNAMEType {
+        CNAMEType {}
     }
     fn rr_class(&self) -> &Class {
         &self.class
@@ -40,8 +39,8 @@ impl ResourceRecord for A {
         self.ttl
     }
 
-    fn data(&self) -> &Ipv4Addr {
-        &self.addr
+    fn data(&self) -> &Name {
+        &self.cname
     }
 }
 

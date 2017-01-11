@@ -1,7 +1,9 @@
 //! Base types for dealing with resource records.
 mod a;
+mod cname;
 
 pub use self::a::{A, AType};
+pub use self::cname::{CNAME, CNAMEType};
 use std::fmt;
 use super::names::Name;
 
