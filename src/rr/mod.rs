@@ -1,11 +1,75 @@
 //! Base types for dealing with resource records.
-mod a;
-mod cname;
-
 pub use self::a::{A, AType};
 pub use self::cname::{CNAME, CNAMEType};
 use std::fmt;
 use super::names::Name;
+
+/// Helper macro for the resource record `Type`.
+#[macro_export]
+macro_rules! resource_type {
+    ($typename:ident, $name:expr, $value:expr) => (
+        #[derive(Debug,Clone,Copy)]
+        #[allow(missing_docs)]
+        pub struct $typename;
+
+        impl Type for $typename {
+            fn name(&self) -> &str {
+                $name
+            }
+            fn value(&self) -> u16 {
+                $value
+            }
+        }
+    );
+}
+
+/// Helper macro for the resource record definitions.
+#[macro_export]
+macro_rules! resource_record_impl {
+    ($rrname:ident, $typename:ident, $name:expr, $value:expr, $data:ty) => (
+        resource_type!($typename, $name, $value);
+        impl ResourceRecord for $rrname {
+            type RRType = $typename;
+            type DataType = $data;
+            fn name(&self) -> &Name {
+                &self.name
+            }
+            fn rr_type(&self) -> $typename {
+                $typename {}
+            }
+            fn rr_class(&self) -> &Class {
+                &self.class
+            }
+            fn ttl(&self) -> i32 {
+                self.ttl
+            }
+
+            fn data(&self) -> &$data {
+                &self.data
+            }
+        }
+    );
+}
+
+/// A more complete macro than `resource_record_impl!` offers:
+#[macro_export]
+macro_rules! resource_record {
+    (pub struct $rrname:ident {
+        $typename:ident, $name:expr, $value:expr,
+        data: $data:ty
+    }) => (
+        pub struct $rrname {
+            name: Name,
+            class: Class,
+            ttl: i32,
+            data: $data
+        }
+        resource_record_impl!($rrname, $typename, $name, $value, $data);
+    );
+}
+
+mod a;
+mod cname;
 
 /// A `Type` field indicates the structure and content of a resource record.
 pub trait Type {
