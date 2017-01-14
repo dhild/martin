@@ -1,16 +1,16 @@
 use ::names::Name;
 use ::rr::{Type, Class, ResourceRecord};
-use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 
-/// An IPv4 host address resource record
+/// An IPv6 host address resource record
 #[derive(Debug,Clone)]
-pub struct A {
+pub struct AAAA {
     name: Name,
     class: Class,
     ttl: i32,
-    data: Ipv4Addr
+    data: Ipv6Addr
 }
-resource_record_impl!(A, AType, "A", 1, Ipv4Addr);
+resource_record_impl!(AAAA, AAAAType, "AAAA", 1, Ipv6Addr);
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,6 @@
 //! Base types for dealing with resource records.
 pub use self::a::{A, AType};
+pub use self::aaaa::{AAAA, AAAAType};
 pub use self::cname::{CNAME, CNAMEType};
 use std::fmt;
 use super::names::Name;
@@ -69,6 +70,7 @@ macro_rules! resource_record {
 }
 
 mod a;
+mod aaaa;
 mod cname;
 
 /// A `Type` field indicates the structure and content of a resource record.
