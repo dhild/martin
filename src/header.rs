@@ -7,7 +7,8 @@ pub struct Header {
     pub id: u16,
     /// Specifies whether this message is a query.
     pub qr: bool,
-    opcode: u8,
+    /// The type of query
+    pub opcode: u8,
     /// Whether the response is authoritative
     pub aa: bool,
     /// Whether the response is truncated
@@ -111,6 +112,31 @@ mod tests {
     use nom::IResult;
     use super::Header;
 
+    fn check_query(header: Header, id: u16, truncated: bool, recursion_desired: bool) {
+        assert_eq!(id, header.id);
+        assert!(!header.qr);
+        assert_eq!(0, header.opcode);
+        assert_eq!(truncated, header.tc);
+        assert_eq!(recursion_desired, header.rd);
+    }
+
+    fn check_response(header: Header,
+                      id: u16,
+                      authoritative: bool,
+                      truncated: bool,
+                      recursion_desired: bool,
+                      recursion_available: bool,
+                      rcode: u8) {
+        assert_eq!(id, header.id);
+        assert!(header.qr);
+        assert_eq!(0, header.opcode);
+        assert_eq!(authoritative, header.aa);
+        assert_eq!(truncated, header.tc);
+        assert_eq!(recursion_desired, header.rd);
+        assert_eq!(recursion_available, header.ra);
+        assert_eq!(rcode, header.rcode);
+    }
+
     #[test]
     fn parse_query_1_header() {
         let data = include_bytes!("../assets/captures/dns_1_query.bin");
@@ -118,13 +144,7 @@ mod tests {
             IResult::Done(_, res) => res,
             _ => panic!("Result not parsed correctly"),
         };
-        assert_eq!(header.id, 2);
-        assert!(!header.qr);
-        assert!(!header.aa);
-        assert!(!header.tc);
-        assert!(header.rd);
-        assert!(!header.ra);
-        assert_eq!(0, header.rcode);
+        check_query(header, 2, false, true);
         assert_eq!(1, header.qdcount);
         assert_eq!(0, header.ancount);
         assert_eq!(0, header.nscount);
@@ -138,13 +158,7 @@ mod tests {
             IResult::Done(_, res) => res,
             _ => panic!("Result not parsed correctly"),
         };
-        assert!(header.qr);
-        assert_eq!(header.id, 2);
-        assert!(!header.aa);
-        assert!(!header.tc);
-        assert!(header.rd);
-        assert!(header.ra);
-        assert_eq!(0, header.rcode);
+        check_response(header, 2, false, false, true, true, 0);
         assert_eq!(1, header.qdcount);
         assert_eq!(1, header.ancount);
         assert_eq!(0, header.nscount);
@@ -158,13 +172,7 @@ mod tests {
             IResult::Done(_, res) => res,
             _ => panic!("Result not parsed correctly"),
         };
-        assert_eq!(header.id, 3);
-        assert!(!header.qr);
-        assert!(!header.aa);
-        assert!(!header.tc);
-        assert!(header.rd);
-        assert!(!header.ra);
-        assert_eq!(0, header.rcode);
+        check_query(header, 3, false, true);
         assert_eq!(1, header.qdcount);
         assert_eq!(0, header.ancount);
         assert_eq!(0, header.nscount);
@@ -178,13 +186,7 @@ mod tests {
             IResult::Done(_, res) => res,
             _ => panic!("Result not parsed correctly"),
         };
-        assert!(header.qr);
-        assert_eq!(header.id, 3);
-        assert!(!header.aa);
-        assert!(!header.tc);
-        assert!(header.rd);
-        assert!(header.ra);
-        assert_eq!(0, header.rcode);
+        check_response(header, 3, false, false, true, true, 0);
         assert_eq!(1, header.qdcount);
         assert_eq!(1, header.ancount);
         assert_eq!(0, header.nscount);
@@ -198,13 +200,7 @@ mod tests {
             IResult::Done(_, res) => res,
             _ => panic!("Result not parsed correctly"),
         };
-        assert_eq!(header.id, 0xda64);
-        assert!(!header.qr);
-        assert!(!header.aa);
-        assert!(!header.tc);
-        assert!(header.rd);
-        assert!(!header.ra);
-        assert_eq!(0, header.rcode);
+        check_query(header, 0xda64, false, true);
         assert_eq!(1, header.qdcount);
         assert_eq!(0, header.ancount);
         assert_eq!(0, header.nscount);
@@ -218,13 +214,7 @@ mod tests {
             IResult::Done(_, res) => res,
             _ => panic!("Result not parsed correctly"),
         };
-        assert!(header.qr);
-        assert_eq!(header.id, 0xda64);
-        assert!(!header.aa);
-        assert!(!header.tc);
-        assert!(header.rd);
-        assert!(header.ra);
-        assert_eq!(0, header.rcode);
+        check_response(header, 0xda64, false, false, true, true, 0);
         assert_eq!(1, header.qdcount);
         assert_eq!(2, header.ancount);
         assert_eq!(1, header.nscount);
@@ -239,19 +229,13 @@ mod tests {
             IResult::Error(err) => {
                 println!("{:?}", err);
                 panic!("Result not parsed correctly (Error)");
-            },
+            }
             IResult::Incomplete(needed) => {
                 println!("{:?}", needed);
                 panic!("Result not parsed correctly (Incomplete)");
-            },
+            }
         };
-        assert_eq!(header.id, 0x60ff);
-        assert!(!header.qr);
-        assert!(!header.aa);
-        assert!(!header.tc);
-        assert!(header.rd);
-        assert!(!header.ra);
-        assert_eq!(0, header.rcode);
+        check_query(header, 0x60ff, false, true);
         assert_eq!(1, header.qdcount);
         assert_eq!(0, header.ancount);
         assert_eq!(0, header.nscount);
@@ -265,13 +249,7 @@ mod tests {
             IResult::Done(_, res) => res,
             _ => panic!("Result not parsed correctly"),
         };
-        assert!(header.qr);
-        assert_eq!(header.id, 0x60ff);
-        assert!(!header.aa);
-        assert!(!header.tc);
-        assert!(header.rd);
-        assert!(header.ra);
-        assert_eq!(0, header.rcode);
+        check_response(header, 0x60ff, false, false, true, true, 0);
         assert_eq!(1, header.qdcount);
         assert_eq!(13, header.ancount);
         assert_eq!(0, header.nscount);
