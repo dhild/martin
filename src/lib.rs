@@ -2,15 +2,23 @@
 #![doc(html_root_url = "https://dhild.github.io/dns-rs/")]
 #![deny(missing_docs,
         missing_debug_implementations, missing_copy_implementations,
-        trivial_casts, trivial_numeric_casts,
+        trivial_casts,
         unsafe_code,
         unstable_features,
         unused_import_braces, unused_qualifications)]
 #![cfg_attr(feature = "dev", allow(unstable_features))]
 #![cfg_attr(feature = "dev", feature(plugin))]
 #![cfg_attr(feature = "dev", plugin(clippy))]
+
+#[macro_use]
+extern crate nom;
+
 pub mod names;
 pub mod rr;
+mod header;
+mod question;
+
+pub use header::Header;
 
 #[cfg(test)]
 mod tests {

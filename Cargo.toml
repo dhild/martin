@@ -11,6 +11,7 @@ description = "DNS library for dealing with resource records."
 
 [dependencies]
 clippy = {version = "*", optional = true}
+nom = "^2.0.1"
 
 [features]
 default = []
