@@ -1,0 +1,56 @@
+Domain Name System (query)
+    [Response In: 14755]
+    Transaction ID: 0x0003
+    Flags: 0x0100 Standard query
+        0... .... .... .... = Response: Message is a query
+        .000 0... .... .... = Opcode: Standard query (0)
+        .... ..0. .... .... = Truncated: Message is not truncated
+        .... ...1 .... .... = Recursion desired: Do query recursively
+        .... .... .0.. .... = Z: reserved (0)
+        .... .... ...0 .... = Non-authenticated data: Unacceptable
+    Questions: 1
+    Answer RRs: 0
+    Authority RRs: 0
+    Additional RRs: 0
+    Queries
+        google.com: type AAAA, class IN
+            Name: google.com
+            [Name Length: 10]
+            [Label Count: 2]
+            Type: AAAA (IPv6 Address) (28)
+            Class: IN (0x0001)
+
+Domain Name System (response)
+    [Request In: 14754]
+    [Time: 0.028684000 seconds]
+    Transaction ID: 0x0003
+    Flags: 0x8180 Standard query response, No error
+        1... .... .... .... = Response: Message is a response
+        .000 0... .... .... = Opcode: Standard query (0)
+        .... .0.. .... .... = Authoritative: Server is not an authority for domain
+        .... ..0. .... .... = Truncated: Message is not truncated
+        .... ...1 .... .... = Recursion desired: Do query recursively
+        .... .... 1... .... = Recursion available: Server can do recursive queries
+        .... .... .0.. .... = Z: reserved (0)
+        .... .... ..0. .... = Answer authenticated: Answer/authority portion was not authenticated by the server
+        .... .... ...0 .... = Non-authenticated data: Unacceptable
+        .... .... .... 0000 = Reply code: No error (0)
+    Questions: 1
+    Answer RRs: 1
+    Authority RRs: 0
+    Additional RRs: 0
+    Queries
+        google.com: type AAAA, class IN
+            Name: google.com
+            [Name Length: 10]
+            [Label Count: 2]
+            Type: AAAA (IPv6 Address) (28)
+            Class: IN (0x0001)
+    Answers
+        google.com: type AAAA, class IN, addr 2607:f8b0:400a:809::200e
+            Name: google.com
+            Type: AAAA (IPv6 Address) (28)
+            Class: IN (0x0001)
+            Time to live: 299
+            Data length: 16
+            AAAA Address: 2607:f8b0:400a:809::200e

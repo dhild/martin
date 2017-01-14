@@ -1,0 +1,77 @@
+Domain Name System (query)
+    [Response In: 75639]
+    Transaction ID: 0xda64
+    Flags: 0x0100 Standard query
+        0... .... .... .... = Response: Message is a query
+        .000 0... .... .... = Opcode: Standard query (0)
+        .... ..0. .... .... = Truncated: Message is not truncated
+        .... ...1 .... .... = Recursion desired: Do query recursively
+        .... .... .0.. .... = Z: reserved (0)
+        .... .... ...0 .... = Non-authenticated data: Unacceptable
+    Questions: 1
+    Answer RRs: 0
+    Authority RRs: 0
+    Additional RRs: 0
+    Queries
+        tile-service.weather.microsoft.com: type AAAA, class IN
+            Name: tile-service.weather.microsoft.com
+            [Name Length: 34]
+            [Label Count: 4]
+            Type: AAAA (IPv6 Address) (28)
+            Class: IN (0x0001)
+
+Domain Name System (response)
+    [Request In: 75636]
+    [Time: 0.036646000 seconds]
+    Transaction ID: 0xda64
+    Flags: 0x8180 Standard query response, No error
+        1... .... .... .... = Response: Message is a response
+        .000 0... .... .... = Opcode: Standard query (0)
+        .... .0.. .... .... = Authoritative: Server is not an authority for domain
+        .... ..0. .... .... = Truncated: Message is not truncated
+        .... ...1 .... .... = Recursion desired: Do query recursively
+        .... .... 1... .... = Recursion available: Server can do recursive queries
+        .... .... .0.. .... = Z: reserved (0)
+        .... .... ..0. .... = Answer authenticated: Answer/authority portion was not authenticated by the server
+        .... .... ...0 .... = Non-authenticated data: Unacceptable
+        .... .... .... 0000 = Reply code: No error (0)
+    Questions: 1
+    Answer RRs: 2
+    Authority RRs: 1
+    Additional RRs: 0
+    Queries
+        tile-service.weather.microsoft.com: type AAAA, class IN
+            Name: tile-service.weather.microsoft.com
+            [Name Length: 34]
+            [Label Count: 4]
+            Type: AAAA (IPv6 Address) (28)
+            Class: IN (0x0001)
+    Answers
+        tile-service.weather.microsoft.com: type CNAME, class IN, cname wildcard.weather.microsoft.com.edgekey.net
+            Name: tile-service.weather.microsoft.com
+            Type: CNAME (Canonical NAME for an alias) (5)
+            Class: IN (0x0001)
+            Time to live: 808
+            Data length: 44
+            CNAME: wildcard.weather.microsoft.com.edgekey.net
+        wildcard.weather.microsoft.com.edgekey.net: type CNAME, class IN, cname e7070.g.akamaiedge.net
+            Name: wildcard.weather.microsoft.com.edgekey.net
+            Type: CNAME (Canonical NAME for an alias) (5)
+            Class: IN (0x0001)
+            Time to live: 466
+            Data length: 21
+            CNAME: e7070.g.akamaiedge.net
+    Authoritative nameservers
+        g.akamaiedge.net: type SOA, class IN, mname n0g.akamaiedge.net
+            Name: g.akamaiedge.net
+            Type: SOA (Start Of a zone of Authority) (6)
+            Class: IN (0x0001)
+            Time to live: 954
+            Data length: 46
+            Primary name server: n0g.akamaiedge.net
+            Responsible authority's mailbox: hostmaster.akamai.com
+            Serial Number: 1484377525
+            Refresh Interval: 1000 (16 minutes, 40 seconds)
+            Retry Interval: 1000 (16 minutes, 40 seconds)
+            Expire limit: 1000 (16 minutes, 40 seconds)
+            Minimum TTL: 1800 (30 minutes)
