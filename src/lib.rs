@@ -13,12 +13,13 @@
 #[macro_use]
 extern crate nom;
 
-pub mod names;
+mod names;
 pub mod rr;
 mod header;
 mod question;
 
 pub use header::Header;
+pub use names::Name;
 
 #[cfg(test)]
 mod tests {
