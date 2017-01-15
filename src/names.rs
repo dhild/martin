@@ -38,11 +38,6 @@ impl Name {
     fn name(&self) -> &String {
         &self.name
     }
-
-    /// Parses a byte stream into a `Name`
-    pub fn parser<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
-        parse_name(data, i)
-    }
 }
 
 /// An error returned when parsing a domain name
@@ -76,7 +71,16 @@ impl fmt::Display for Name {
     }
 }
 
-fn parse_name<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
+/// Parses a byte stream into a `Name`
+pub fn parse_name<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
+    match parse_name_to_string(data, i) {
+        IResult::Done(output, name_string) => IResult::Done(output, Name { name: name_string }),
+        IResult::Error(e) => IResult::Error(e),
+        IResult::Incomplete(e) => IResult::Incomplete(e),
+    }
+}
+
+fn parse_name_to_string<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], String> {
     match i[0] {
         0 => parse_root(i),
         1...63 => parse_label(data, i),
@@ -87,36 +91,36 @@ fn parse_name<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
     }
 }
 
-named!(parse_root<&[u8], Name>,
-do_parse!(
-    tag!(&[ 0u8 ][..]) >>
-    take!(1) >>
-    (Name { name: String::from("") })
-));
+named!(parse_root<&[u8], String>,
+    value!(String::from(""), tag!(&[ 0u8 ][..]))
+);
 
-fn parse_offset<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
+fn parse_offset<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], String> {
     match be_u16(i) {
         IResult::Done(output, tag_and_offset) => {
             let offset = (tag_and_offset & 0b0011_1111_1111_1111) as usize;
             let i2 = &data[offset..];
-            parse_name(data, i2)
+            match parse_name_to_string(data, i2) {
+                IResult::Done(_, name) => IResult::Done(output, name),
+                IResult::Error(e) => IResult::Error(e),
+                IResult::Incomplete(e) => IResult::Incomplete(e),
+            }
         }
         IResult::Error(e) => IResult::Error(e),
         IResult::Incomplete(e) => IResult::Incomplete(e),
     }
 }
 
-fn parse_label<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
+fn parse_label<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], String> {
     match be_u8(i) {
         IResult::Done(output, length) => {
             match parse_label_bytes(output, length as usize) {
                 IResult::Done(output, name_string) => {
-                    match parse_name(data, output) {
+                    match parse_name_to_string(data, output) {
                         IResult::Done(output, rem) => {
                             let mut s = String::from(name_string);
-                            s.push_str(rem.name().as_str());
-                            let name = Name { name: s };
-                            IResult::Done(output, name)
+                            s.push_str(rem.as_str());
+                            IResult::Done(output, s)
                         }
                         IResult::Error(e) => IResult::Error(e),
                         IResult::Incomplete(e) => IResult::Incomplete(e),

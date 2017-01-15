@@ -1,4 +1,5 @@
 //! Base types for dealing with resource records.
+
 pub use self::a::{A, AType};
 pub use self::aaaa::{AAAA, AAAAType};
 pub use self::cname::{CNAME, CNAMEType};
@@ -94,6 +95,10 @@ pub enum Class {
     /// The "Internet" class.
     IN,
 }
+
+named!(pub parse_class<&[u8], Class>,
+    value!(Class::IN, tag!(b"IN"))
+);
 
 /// A resource record associates a `Name` within a `Class` with `Type` dependent data.
 pub trait ResourceRecord {

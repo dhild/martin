@@ -14,12 +14,14 @@
 extern crate nom;
 
 mod names;
-pub mod rr;
+mod rr;
 mod header;
 mod question;
 
 pub use header::Header;
 pub use names::Name;
+pub use question::Question;
+pub use rr::{Type, Class, ResourceRecord};
 
 #[cfg(test)]
 mod tests {
