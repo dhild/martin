@@ -1,4 +1,4 @@
-use nom::{be_u8, IResult, ErrorKind};
+use nom::{be_u8, be_u16, IResult, ErrorKind};
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
@@ -40,8 +40,8 @@ impl Name {
     }
 
     /// Parses a byte stream into a `Name`
-    pub fn parser(i: &[u8]) -> IResult<&[u8], Name> {
-        parse_name(i)
+    pub fn parser<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
+        parse_name(data, i)
     }
 }
 
@@ -76,12 +76,12 @@ impl fmt::Display for Name {
     }
 }
 
-fn parse_name<'a>(i: &'a [u8]) -> IResult<&'a [u8], Name> {
+fn parse_name<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
     match i[0] {
         0 => parse_root(i),
-        1...63 => parse_label(i),
+        1...63 => parse_label(data, i),
         // Offsets:
-        192...255 => IResult::Error(ErrorKind::Custom(2)),
+        192...255 => parse_offset(data, i),
         // Unknown
         _ => IResult::Error(ErrorKind::Custom(1)),
     }
@@ -94,12 +94,24 @@ do_parse!(
     (Name { name: String::from("") })
 ));
 
-fn parse_label<'a>(i: &'a [u8]) -> IResult<&'a [u8], Name> {
+fn parse_offset<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
+    match be_u16(i) {
+        IResult::Done(output, tag_and_offset) => {
+            let offset = (tag_and_offset & 0b0011_1111_1111_1111) as usize;
+            let i2 = &data[offset..];
+            parse_name(data, i2)
+        }
+        IResult::Error(e) => IResult::Error(e),
+        IResult::Incomplete(e) => IResult::Incomplete(e),
+    }
+}
+
+fn parse_label<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
     match be_u8(i) {
         IResult::Done(output, length) => {
             match parse_label_bytes(output, length as usize) {
                 IResult::Done(output, name_string) => {
-                    match parse_name(output) {
+                    match parse_name(data, output) {
                         IResult::Done(output, rem) => {
                             let mut s = String::from(name_string);
                             s.push_str(rem.name().as_str());
