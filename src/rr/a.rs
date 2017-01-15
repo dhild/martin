@@ -10,7 +10,21 @@ pub struct A {
     ttl: i32,
     data: Ipv4Addr
 }
-resource_record_impl!(A, AType, "A", 1, Ipv4Addr);
+
+impl ResourceRecord for A {
+    fn name(&self) -> &Name {
+        &self.name
+    }
+    fn rr_type(&self) -> Type {
+        Type::A
+    }
+    fn rr_class(&self) -> Class {
+        self.class
+    }
+    fn ttl(&self) -> i32 {
+        self.ttl
+    }
+}
 
 #[cfg(test)]
 mod tests {

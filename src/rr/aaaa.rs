@@ -10,7 +10,21 @@ pub struct AAAA {
     ttl: i32,
     data: Ipv6Addr
 }
-resource_record_impl!(AAAA, AAAAType, "AAAA", 1, Ipv6Addr);
+
+impl ResourceRecord for AAAA {
+    fn name(&self) -> &Name {
+        &self.name
+    }
+    fn rr_type(&self) -> Type {
+        Type::AAAA
+    }
+    fn rr_class(&self) -> Class {
+        self.class
+    }
+    fn ttl(&self) -> i32 {
+        self.ttl
+    }
+}
 
 #[cfg(test)]
 mod tests {

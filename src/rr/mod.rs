@@ -1,92 +1,23 @@
 //! Base types for dealing with resource records.
-
-pub use self::a::{A, AType};
-pub use self::aaaa::{AAAA, AAAAType};
-pub use self::cname::{CNAME, CNAMEType};
-use std::fmt;
-use super::names::Name;
-
-/// Helper macro for the resource record `Type`.
-#[macro_export]
-macro_rules! resource_type {
-    ($typename:ident, $name:expr, $value:expr) => (
-        #[derive(Debug,Clone,Copy)]
-        #[allow(missing_docs)]
-        pub struct $typename;
-
-        impl Type for $typename {
-            fn name(&self) -> &str {
-                $name
-            }
-            fn value(&self) -> u16 {
-                $value
-            }
-        }
-    );
-}
-
-/// Helper macro for the resource record definitions.
-#[macro_export]
-macro_rules! resource_record_impl {
-    ($rrname:ident, $typename:ident, $name:expr, $value:expr, $data:ty) => (
-        resource_type!($typename, $name, $value);
-        impl ResourceRecord for $rrname {
-            type RRType = $typename;
-            type DataType = $data;
-            fn name(&self) -> &Name {
-                &self.name
-            }
-            fn rr_type(&self) -> $typename {
-                $typename {}
-            }
-            fn rr_class(&self) -> &Class {
-                &self.class
-            }
-            fn ttl(&self) -> i32 {
-                self.ttl
-            }
-
-            fn data(&self) -> &$data {
-                &self.data
-            }
-        }
-    );
-}
-
-/// A more complete macro than `resource_record_impl!` offers:
-#[macro_export]
-macro_rules! resource_record {
-    (pub struct $rrname:ident {
-        $typename:ident, $name:expr, $value:expr,
-        data: $data:ty
-    }) => (
-        pub struct $rrname {
-            name: Name,
-            class: Class,
-            ttl: i32,
-            data: $data
-        }
-        resource_record_impl!($rrname, $typename, $name, $value, $data);
-    );
-}
-
 mod a;
 mod aaaa;
 mod cname;
 
+pub use self::a::A;
+pub use self::aaaa::AAAA;
+pub use self::cname::CNAME;
+use std::fmt;
+use super::names::Name;
+
 /// A `Type` field indicates the structure and content of a resource record.
-pub trait Type {
-    /// A short name for the type.
-    ///
-    /// # Examples
-    /// - A
-    /// - NS
-    /// - SOA
-    /// - MX
-    /// - CNAME
-    fn name(&self) -> &str;
-    /// The 16-bit value uniquely assigned to this type.
-    fn value(&self) -> u16;
+#[derive(Debug,PartialEq,Clone,Copy)]
+pub enum Type {
+    /// The `A` resource type, holding an IPv4 host address resource record
+    A,
+    /// The `A` resource type, holding an IPv6 host address resource record
+    AAAA,
+    /// The `CNAME` resource type, holding the canonical name for an alias
+    CNAME
 }
 
 /// Enum for valid `class` values from DNS resource records.
@@ -96,35 +27,23 @@ pub enum Class {
     IN,
 }
 
-named!(pub parse_class<&[u8], Class>,
-    value!(Class::IN, tag!(b"IN"))
-);
-
 /// A resource record associates a `Name` within a `Class` with `Type` dependent data.
 pub trait ResourceRecord {
-    /// Each `ResourceRecord` must have a distinct `Type`.
-    type RRType: Type;
-    /// The type of data stored by this record.
-    type DataType;
-
     /// Returns the `Name` this record applies to.
     fn name(&self) -> &Name;
     /// Returns the `Type` identifier for this record.
-    fn rr_type(&self) -> Self::RRType;
+    fn rr_type(&self) -> Type;
     /// Returns the `Class` this record applies to.
-    fn rr_class(&self) -> &Class;
+    fn rr_class(&self) -> Class;
     /// Returns the "time to live" for this data.
     ///
     /// DNS systems are expected to cache data for this length of time.
     fn ttl(&self) -> i32;
-
-    /// Returns the data that this record provides.
-    ///
-    /// # Examples
-    /// For the `A` record, this would be the IPv4 address. A `CNAME` record would contain the
-    /// canonical name that is referred to by this record's name.
-    fn data(&self) -> &Self::DataType;
 }
+
+named!(pub parse_class<&[u8], Class>,
+    value!(Class::IN, tag!(b"IN"))
+);
 
 impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

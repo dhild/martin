@@ -17,11 +17,13 @@ mod names;
 mod rr;
 mod header;
 mod question;
+mod message;
 
 pub use header::Header;
 pub use names::Name;
 pub use question::Question;
 pub use rr::{Type, Class, ResourceRecord};
+pub use message::Message;
 
 #[cfg(test)]
 mod tests {
