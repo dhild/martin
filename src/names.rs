@@ -11,19 +11,17 @@ pub struct Name {
     name: String,
 }
 
-fn first_label(name: &str) -> &str {
-    match name.find('.') {
-        Some(index) => &name[..index],
-        None => name,
-    }
-}
-
 impl Name {
-    fn label(&self) -> &str {
-        first_label(&self.name)
+    /// Returns the label for this `Name`
+    pub fn label(&self) -> &str {
+        match self.name.find('.') {
+            Some(index) => &self.name[..index],
+            None => &self.name,
+        }
     }
 
-    fn parent(&self) -> Option<Name> {
+    /// The parent is this `Name` without the left-most label
+    pub fn parent(&self) -> Option<Name> {
         match self.name.find('.') {
             Some(index) => Some(Name { name: String::from(&self.name[(index + 1)..]) }),
             None => {
@@ -35,14 +33,22 @@ impl Name {
         }
     }
 
-    fn name(&self) -> &String {
+    /// Gets the domain name as a `String`
+    pub fn name(&self) -> &String {
         &self.name
     }
 }
 
 /// An error returned when parsing a domain name
 #[derive(Debug,PartialEq,Clone,Copy)]
-pub struct NameParseError(());
+pub enum NameParseError {
+    TotalLengthGreaterThan255(usize),
+    LabelLengthGreaterThan63(usize),
+    InvalidCharacter(char),
+    HypenFirstCharacterInLabel,
+    NameMustEndInRootLabel,
+    EmptyNonRootLabel,
+}
 
 impl fmt::Display for NameParseError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
@@ -60,6 +66,35 @@ impl Error for NameParseError {
 impl FromStr for Name {
     type Err = NameParseError;
     fn from_str(s: &str) -> Result<Name, NameParseError> {
+        // Counting the `0` bit for the root label length, the str length must be < 254
+        if s.len() > 254 {
+            return Err(NameParseError::TotalLengthGreaterThan255(s.len()));
+        }
+        let mut label_len = 0;
+        for c in s.chars() {
+            match c {
+                '.' => {
+                    if label_len == 0 {
+                        return Err(NameParseError::EmptyNonRootLabel);
+                    }
+                    if label_len > 63 {
+                        return Err(NameParseError::LabelLengthGreaterThan63(label_len));
+                    }
+                    label_len = 0;
+                }
+                'a'...'z' | 'A'...'Z' | '0'...'9' => label_len += 1,
+                '-' => {
+                    if label_len == 0 {
+                        return Err(NameParseError::HypenFirstCharacterInLabel);
+                    }
+                    label_len += 1;
+                }
+                c @ _ => return Err(NameParseError::InvalidCharacter(c)),
+            }
+        }
+        if label_len != 0 {
+            return Err(NameParseError::NameMustEndInRootLabel);
+        }
         let name = String::from(s);
         Ok(Name { name: name })
     }
@@ -175,7 +210,9 @@ fn validate_label_to_string<'a>(input: &'a [u8]) -> ::std::result::Result<&'a st
 
 #[cfg(test)]
 mod tests {
-    use super::Name;
+    use nom::ErrorKind;
+    use nom::IResult::{Done, Error};
+    use super::*;
 
     #[test]
     fn root_label_is_valid() {
@@ -191,31 +228,53 @@ mod tests {
 
     #[test]
     fn simple_label_is_valid() {
-        let name = "raspberry".parse::<Name>().unwrap();
+        let name = "raspberry.".parse::<Name>().unwrap();
         assert_eq!("raspberry", name.label());
     }
 
     #[test]
     fn simple_parent_is_root() {
-        let name = "raspberry".parse::<Name>().unwrap();
+        let name = "raspberry.".parse::<Name>().unwrap();
         let parent = name.parent().unwrap();
         assert_eq!("", parent.label());
     }
 
     #[test]
     fn multi_label_is_valid() {
-        let name = "test.example.com".parse::<Name>().unwrap();
+        let name = "test.example.com.".parse::<Name>().unwrap();
         assert_eq!("test", name.label());
     }
 
     #[test]
     fn multi_parent_is_valid() {
-        let name = "test.example.com".parse::<Name>().unwrap();
+        let name = "test.example.com.".parse::<Name>().unwrap();
         let parent1 = name.parent().unwrap();
         assert_eq!("example", parent1.label());
         let parent2 = parent1.parent().unwrap();
         assert_eq!("com", parent2.label());
         let parent3 = parent2.parent().unwrap();
         assert_eq!("", parent3.label());
+    }
+
+    #[test]
+    fn name_parse_test() {
+        // Contained names:
+        // 20: F.ISI.ARPA.
+        // 22: ISI.ARPA.
+        // 26: ARPA.
+        // 40: FOO.F.ISI.ARPA.
+        // 46: <root>
+        let a = b"12345678901234567890\x01F\x03ISI\x04ARPA\x0012345678\x03FOO\xC0\x14\x00abcd";
+
+        assert_eq!(parse_name(&a[..], &a[20..]),
+                   Done(&a[32..], Name { name: String::from("F.ISI.ARPA.") }));
+        assert_eq!(parse_name(&a[..], &a[22..]),
+                   Done(&a[32..], Name { name: String::from("ISI.ARPA.") }));
+        assert_eq!(parse_name(&a[..], &a[40..]),
+                   Done(&a[46..], Name { name: String::from("FOO.F.ISI.ARPA.") }));
+        assert_eq!(parse_name(&a[..], &a[44..]),
+                   Done(&a[46..], Name { name: String::from("F.ISI.ARPA.") }));
+        assert_eq!(parse_name(&a[..], &a[46..]),
+                   Done(&a[47..], Name { name: String::from("") }));
     }
 }
