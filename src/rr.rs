@@ -74,12 +74,17 @@ named!(pub parse_class<&[u8], Class>,
     )
 );
 
+pub fn type_from(value: u16) -> Option<Type> {
+    match value {
+        1u16 => Some(Type::A),
+        28u16 => Some(Type::AAAA),
+        5u16 => Some(Type::CNAME),
+        _ => None,
+    }
+}
+
 named!(pub parse_type<&[u8], Type>,
-    switch!(be_u16,
-        1u16 => value!(Type::A) |
-        28u16 => value!(Type::AAAA) |
-        5u16 => value!(Type::CNAME)
-    )
+    map_opt!(be_u16, type_from)
 );
 
 //                                 1  1  1  1  1  1
@@ -195,7 +200,6 @@ impl fmt::Display for Class {
 
 #[cfg(test)]
 mod tests {
-    use ::names::Name;
     use nom::ErrorKind;
     use nom::IResult::{Done, Error};
     use std::net::Ipv4Addr;
@@ -212,7 +216,7 @@ mod tests {
         assert_eq!(parse_type(&aaaa[..]), Done(&b"abcd"[..], Type::AAAA));
         assert_eq!(parse_type(&cname[..]), Done(&b"abcd"[..], Type::CNAME));
         assert_eq!(parse_type(&md_deprecated[..]),
-            Error(error_node_position!(ErrorKind::Switch, &b"\x00\x03abcd"[..],
+            Error(error_node_position!(ErrorKind::MapOpt, &b"\x00\x03abcd"[..],
                                        error_position!(ErrorKind::Tag, &b"\x00\x03abcd"[..]))));
     }
 
@@ -234,7 +238,6 @@ mod tests {
     #[test]
     fn parse_a_record() {
         let src = b"\x03FOO\x03BAR\x00\x00\x01\x00\x01\x00\x00\x0e\x10\x00\x04\x7f\x00\x00\x01";
-        let result = parse_record(&src[..], &src[..]);
         assert_eq!(parse_record(&src[..], &src[..]),
                     Done(&b""[..], ResourceRecord::A {
                         name: "FOO.BAR.".parse().unwrap(),
@@ -247,7 +250,6 @@ mod tests {
     #[test]
     fn parse_aaaa_record() {
         let src = b"\x03FOO\x03BAR\x00\x00\x1c\x00\x01\x00\x00\x0e\x10\x00\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01";
-        let result = parse_record(&src[..], &src[..]);
         assert_eq!(parse_record(&src[..], &src[..]),
                     Done(&b""[..], ResourceRecord::AAAA {
                         name: "FOO.BAR.".parse().unwrap(),

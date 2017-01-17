@@ -210,8 +210,7 @@ fn validate_label_to_string<'a>(input: &'a [u8]) -> ::std::result::Result<&'a st
 
 #[cfg(test)]
 mod tests {
-    use nom::ErrorKind;
-    use nom::IResult::{Done, Error};
+    use nom::IResult::Done;
     use super::*;
 
     #[test]

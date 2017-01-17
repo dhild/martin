@@ -1,38 +1,142 @@
-use nom::{IResult, be_u16};
+use nom::be_u16;
+
+/// Query operation types
+#[derive(Debug,Clone,Copy,PartialEq)]
+pub enum Opcode {
+    Query,
+    InverseQuery,
+    Status,
+}
+
+/// Response types
+#[derive(Debug,Clone,Copy,PartialEq)]
+pub enum Rcode {
+    NoError,
+    FormatError,
+    ServerFailure,
+    NameError,
+    NotImplemented,
+    Refused,
+}
 
 /// Header for resource record queries and responses
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug,Clone,Copy,PartialEq)]
 pub struct Header {
     /// A 16 bit identifier assigned by the program.
     pub id: u16,
-    /// Specifies whether this message is a query.
+    /// Specifies whether this message is a query (`false`) or response (`true`).
     pub qr: bool,
     /// The type of query
-    pub opcode: u8,
+    pub opcode: Opcode,
     /// Whether the response is authoritative
-    pub aa: bool,
+    pub authoritative: bool,
     /// Whether the response is truncated
-    pub tc: bool,
+    pub truncated: bool,
     /// Whether recursion is desired
-    pub rd: bool,
+    pub recursion_desired: bool,
     /// Whether recursion is available
-    pub ra: bool,
+    pub recursion_available: bool,
     /// The response code
-    pub rcode: u8,
+    pub rcode: Rcode,
     /// The number of entries in the question section.
-    pub qdcount: u16,
+    pub question_count: u16,
     /// The number of entries in the resource records section.
-    pub ancount: u16,
+    pub answer_count: u16,
     /// The number of entries in the authority records section.
-    pub nscount: u16,
+    pub ns_count: u16,
     /// The number of entries in the additional records section.
-    pub arcount: u16,
+    pub additional_count: u16,
 }
 
 impl Header {
-    /// Parses a byte stream into a `Header`
-    pub fn parser(i: &[u8]) -> IResult<&[u8], Header> {
-        header(i)
+    /// Create a `Header` for a query
+    pub fn query(id: u16, opcode: Opcode, recursion_desired: bool, questions: u16) -> Header {
+        Header {
+            id: id,
+            qr: false,
+            opcode: opcode,
+            authoritative: false,
+            truncated: false,
+            recursion_desired: recursion_desired,
+            recursion_available: false,
+            rcode: Rcode::NoError,
+            question_count: questions,
+            answer_count: 0,
+            ns_count: 0,
+            additional_count: 0,
+        }
+    }
+
+    /// Create a `Header` for a response
+    pub fn response(query: Header, recursion_available: bool) -> Header {
+        Header {
+            id: query.id,
+            qr: true,
+            opcode: query.opcode,
+            authoritative: false,
+            truncated: false,
+            recursion_desired: query.recursion_desired,
+            recursion_available: recursion_available,
+            rcode: Rcode::NoError,
+            question_count: query.question_count,
+            answer_count: 0,
+            ns_count: 0,
+            additional_count: 0,
+        }
+    }
+
+    /// Creates a copy of the header, with the `answer_count` field modified.
+    pub fn answers(&self, count: u16) -> Header {
+        Header {
+            id: self.id,
+            qr: self.qr,
+            opcode: self.opcode,
+            authoritative: self.authoritative,
+            truncated: self.truncated,
+            recursion_desired: self.recursion_desired,
+            recursion_available: self.recursion_available,
+            rcode: self.rcode,
+            question_count: self.question_count,
+            answer_count: count,
+            ns_count: self.ns_count,
+            additional_count: self.additional_count,
+        }
+    }
+
+    /// Creates a copy of the header, with the `ns_count` field modified.
+    pub fn authorities(&self, count: u16) -> Header {
+        Header {
+            id: self.id,
+            qr: self.qr,
+            opcode: self.opcode,
+            authoritative: self.authoritative,
+            truncated: self.truncated,
+            recursion_desired: self.recursion_desired,
+            recursion_available: self.recursion_available,
+            rcode: self.rcode,
+            question_count: self.question_count,
+            answer_count: self.answer_count,
+            ns_count: count,
+            additional_count: self.additional_count,
+        }
+    }
+
+    /// Creates a copy of the header, with the `additional_count` field modified.
+    pub fn additional(&self, count: u16) -> Header {
+        Header {
+            id: self.id,
+            qr: self.qr,
+            opcode: self.opcode,
+            authoritative: self.authoritative,
+            truncated: self.truncated,
+            recursion_desired: self.recursion_desired,
+            recursion_available: self.recursion_available,
+            rcode: self.rcode,
+            question_count: self.question_count,
+            answer_count: self.answer_count,
+            ns_count: self.ns_count,
+            additional_count: count,
+        }
     }
 }
 
@@ -52,38 +156,40 @@ impl Header {
 // |                    ARCOUNT                    |
 // +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 
-struct Flags {
-    qr: bool,
-    opcode: u8,
-    aa: bool,
-    tc: bool,
-    rd: bool,
-    ra: bool,
-    rcode: u8,
+fn opcode_from(bits: u8) -> Option<Opcode> {
+    match bits {
+        0 => Some(Opcode::Query),
+        1 => Some(Opcode::InverseQuery),
+        2 => Some(Opcode::Status),
+        _ => None,
+    }
+}
+fn rcode_from(bits: u8) -> Option<Rcode> {
+    match bits {
+        0 => Some(Rcode::NoError),
+        1 => Some(Rcode::FormatError),
+        2 => Some(Rcode::ServerFailure),
+        3 => Some(Rcode::NameError),
+        4 => Some(Rcode::NotImplemented),
+        5 => Some(Rcode::Refused),
+        _ => None,
+    }
 }
 
-named!(header_flags<&[u8], Flags>,
+named!(header_flags<&[u8], (bool, Opcode, bool, bool, bool, bool, Rcode)>,
 bits!(do_parse!(
      qr:     take_bits!( u8, 1 ) >>
-     opcode: take_bits!( u8, 4 ) >>
+     opcode: map_opt!(take_bits!( u8, 4 ), opcode_from) >>
      aa:     take_bits!( u8, 1 ) >>
      tc:     take_bits!( u8, 1 ) >>
      rd:     take_bits!( u8, 1 ) >>
      ra:     take_bits!( u8, 1 ) >>
      zero:   take_bits!( u8, 3 ) >>
-     rcode:  take_bits!( u8, 4 ) >>
-     (Flags {
-          qr: (qr == 1),
-          opcode: opcode,
-          aa: (aa == 1),
-          tc: (tc == 1),
-          rd: (rd == 1),
-          ra: (ra == 1),
-          rcode: rcode
-      })
+     rcode:  map_opt!(take_bits!( u8, 4 ), rcode_from) >>
+     (((qr == 1), opcode, (aa == 1), (tc == 1), (rd == 1), (ra == 1), rcode))
 )));
 
-named!(header<&[u8], Header>,
+named!(pub parse_header<&[u8], Header>,
 do_parse!(
     id:          be_u16 >>
     flags: header_flags >>
@@ -93,166 +199,102 @@ do_parse!(
     arcount:     be_u16 >>
     (Header {
         id: id,
-        qr: flags.qr,
-        opcode: flags.opcode,
-        aa: flags.aa,
-        tc: flags.tc,
-        rd: flags.rd,
-        ra: flags.ra,
-        rcode: flags.rcode,
-        qdcount: qdcount,
-        ancount: ancount,
-        nscount: nscount,
-        arcount: arcount
+        qr: flags.0,
+        opcode: flags.1,
+        authoritative: flags.2,
+        truncated: flags.3,
+        recursion_desired: flags.4,
+        recursion_available: flags.5,
+        rcode: flags.6,
+        question_count: qdcount,
+        answer_count: ancount,
+        ns_count: nscount,
+        additional_count: arcount
     })
 ));
 
 #[cfg(test)]
 mod tests {
-    use nom::IResult;
-    use super::Header;
+    use nom::IResult::Done;
+    use super::*;
 
-    fn check_query(header: Header, id: u16, truncated: bool, recursion_desired: bool) {
-        assert_eq!(id, header.id);
-        assert!(!header.qr);
-        assert_eq!(0, header.opcode);
-        assert_eq!(truncated, header.tc);
-        assert_eq!(recursion_desired, header.rd);
+    fn query_1() -> Header {
+        Header::query(2, Opcode::Query, true, 1)
     }
-
-    fn check_response(header: Header,
-                      id: u16,
-                      authoritative: bool,
-                      truncated: bool,
-                      recursion_desired: bool,
-                      recursion_available: bool,
-                      rcode: u8) {
-        assert_eq!(id, header.id);
-        assert!(header.qr);
-        assert_eq!(0, header.opcode);
-        assert_eq!(authoritative, header.aa);
-        assert_eq!(truncated, header.tc);
-        assert_eq!(recursion_desired, header.rd);
-        assert_eq!(recursion_available, header.ra);
-        assert_eq!(rcode, header.rcode);
+    fn response_1() -> Header {
+        Header::response(query_1(), true).answers(1)
     }
 
     #[test]
     fn parse_query_1_header() {
         let data = include_bytes!("../assets/captures/dns_1_query.bin");
-        let header = match Header::parser(&data[0..12]) {
-            IResult::Done(_, res) => res,
-            _ => panic!("Result not parsed correctly"),
-        };
-        check_query(header, 2, false, true);
-        assert_eq!(1, header.qdcount);
-        assert_eq!(0, header.ancount);
-        assert_eq!(0, header.nscount);
-        assert_eq!(0, header.arcount);
+        assert_eq!(parse_header(&data[0..12]), Done(&b""[..], query_1()));
     }
 
     #[test]
     fn parse_response_1_header() {
         let data = include_bytes!("../assets/captures/dns_1_response.bin");
-        let header = match Header::parser(&data[0..12]) {
-            IResult::Done(_, res) => res,
-            _ => panic!("Result not parsed correctly"),
-        };
-        check_response(header, 2, false, false, true, true, 0);
-        assert_eq!(1, header.qdcount);
-        assert_eq!(1, header.ancount);
-        assert_eq!(0, header.nscount);
-        assert_eq!(0, header.arcount);
+        assert_eq!(parse_header(&data[0..12]), Done(&b""[..], response_1()));
+    }
+
+    fn query_2() -> Header {
+        Header::query(3, Opcode::Query, true, 1)
+    }
+    fn response_2() -> Header {
+        Header::response(query_2(), true).answers(1)
     }
 
     #[test]
     fn parse_query_2_header() {
         let data = include_bytes!("../assets/captures/dns_2_query.bin");
-        let header = match Header::parser(&data[0..12]) {
-            IResult::Done(_, res) => res,
-            _ => panic!("Result not parsed correctly"),
-        };
-        check_query(header, 3, false, true);
-        assert_eq!(1, header.qdcount);
-        assert_eq!(0, header.ancount);
-        assert_eq!(0, header.nscount);
-        assert_eq!(0, header.arcount);
+        assert_eq!(parse_header(&data[0..12]), Done(&b""[..], query_2()));
     }
 
     #[test]
     fn parse_response_2_header() {
         let data = include_bytes!("../assets/captures/dns_2_response.bin");
-        let header = match Header::parser(&data[0..12]) {
-            IResult::Done(_, res) => res,
-            _ => panic!("Result not parsed correctly"),
-        };
-        check_response(header, 3, false, false, true, true, 0);
-        assert_eq!(1, header.qdcount);
-        assert_eq!(1, header.ancount);
-        assert_eq!(0, header.nscount);
-        assert_eq!(0, header.arcount);
+        assert_eq!(parse_header(&data[0..12]), Done(&b""[..], response_2()));
+    }
+
+    fn query_3() -> Header {
+        Header::query(0xda64, Opcode::Query, true, 1)
+    }
+    fn response_3() -> Header {
+        Header::response(query_3(), true)
+            .answers(2)
+            .authorities(1)
     }
 
     #[test]
     fn parse_query_3_header() {
         let data = include_bytes!("../assets/captures/dns_3_query.bin");
-        let header = match Header::parser(&data[0..12]) {
-            IResult::Done(_, res) => res,
-            _ => panic!("Result not parsed correctly"),
-        };
-        check_query(header, 0xda64, false, true);
-        assert_eq!(1, header.qdcount);
-        assert_eq!(0, header.ancount);
-        assert_eq!(0, header.nscount);
-        assert_eq!(0, header.arcount);
+        assert_eq!(parse_header(&data[0..12]), Done(&b""[..], query_3()));
     }
 
     #[test]
     fn parse_response_3_header() {
         let data = include_bytes!("../assets/captures/dns_3_response.bin");
-        let header = match Header::parser(&data[0..12]) {
-            IResult::Done(_, res) => res,
-            _ => panic!("Result not parsed correctly"),
-        };
-        check_response(header, 0xda64, false, false, true, true, 0);
-        assert_eq!(1, header.qdcount);
-        assert_eq!(2, header.ancount);
-        assert_eq!(1, header.nscount);
-        assert_eq!(0, header.arcount);
+        assert_eq!(parse_header(&data[0..12]), Done(&b""[..], response_3()));
+    }
+
+    fn query_4() -> Header {
+        Header::query(0x60ff, Opcode::Query, true, 1).additional(1)
+    }
+    fn response_4() -> Header {
+        Header::response(query_4(), true)
+            .answers(13)
+            .additional(1)
     }
 
     #[test]
     fn parse_query_4_header() {
         let data = include_bytes!("../assets/captures/dns_4_query.bin");
-        let header = match Header::parser(&data[0..12]) {
-            IResult::Done(_, res) => res,
-            IResult::Error(err) => {
-                println!("{:?}", err);
-                panic!("Result not parsed correctly (Error)");
-            }
-            IResult::Incomplete(needed) => {
-                println!("{:?}", needed);
-                panic!("Result not parsed correctly (Incomplete)");
-            }
-        };
-        check_query(header, 0x60ff, false, true);
-        assert_eq!(1, header.qdcount);
-        assert_eq!(0, header.ancount);
-        assert_eq!(0, header.nscount);
-        assert_eq!(1, header.arcount);
+        assert_eq!(parse_header(&data[0..12]), Done(&b""[..], query_4()));
     }
 
     #[test]
     fn parse_response_4_header() {
         let data = include_bytes!("../assets/captures/dns_4_response.bin");
-        let header = match Header::parser(&data[0..12]) {
-            IResult::Done(_, res) => res,
-            _ => panic!("Result not parsed correctly"),
-        };
-        check_response(header, 0x60ff, false, false, true, true, 0);
-        assert_eq!(1, header.qdcount);
-        assert_eq!(13, header.ancount);
-        assert_eq!(0, header.nscount);
-        assert_eq!(1, header.arcount);
+        assert_eq!(parse_header(&data[0..12]), Done(&b""[..], response_4()));
     }
 }
