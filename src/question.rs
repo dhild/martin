@@ -8,7 +8,7 @@ pub enum QType {
     ByType(Type),
     ZoneTransfer,
     MailRecords,
-    All,
+    Any,
 }
 
 /// A type that describes a DNS query
@@ -47,21 +47,19 @@ pub fn parse_question<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Ques
         IResult::Incomplete(e) => IResult::Incomplete(e),
     }
 }
-fn qtype_from(bits: u16) -> Option<QType> {
-    if let Some(t) = type_from(bits) {
-        return Some(QType::ByType(t));
-    };
-    match bits {
-        252 => Some(QType::ZoneTransfer),
-        253 => Some(QType::MailRecords),
-        255 => Some(QType::All),
-        _ => None,
+
+fn qtype_from(bits: u16) -> QType {
+    match type_from(bits) {
+        Type::Unknown {value: 252} => QType::ZoneTransfer,
+        Type::Unknown {value: 253} => QType::MailRecords,
+        Type::Unknown {value: 255} => QType::Any,
+        t @ _ => QType::ByType(t),
     }
 }
 
 named!(parse_fields<&[u8], (QType, Class)>,
 do_parse!(
-    qtype:  map_opt!(be_u16, qtype_from) >>
+    qtype:  map!(be_u16, qtype_from) >>
     qclass: parse_class >>
     ((qtype, qclass))
 ));

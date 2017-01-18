@@ -1,5 +1,6 @@
 use nom::{be_u8, be_u16, IResult, ErrorKind};
-use std::error::Error;
+use nom::IResult::*;
+use std::error;
 use std::fmt;
 use std::str::FromStr;
 
@@ -52,11 +53,12 @@ pub enum NameParseError {
 
 impl fmt::Display for NameParseError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        use std::error::Error;
         fmt.write_str(self.description())
     }
 }
 
-impl Error for NameParseError {
+impl error::Error for NameParseError {
     fn description(&self) -> &str {
         "invalid domain name syntax"
     }
@@ -109,9 +111,9 @@ impl fmt::Display for Name {
 /// Parses a byte stream into a `Name`
 pub fn parse_name<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
     match parse_name_to_string(data, i) {
-        IResult::Done(output, name_string) => IResult::Done(output, Name { name: name_string }),
-        IResult::Error(e) => IResult::Error(e),
-        IResult::Incomplete(e) => IResult::Incomplete(e),
+        Done(output, name_string) => Done(output, Name { name: name_string }),
+        Incomplete(e) => Incomplete(e),
+        Error(e) => Error(error_node_position!(ErrorKind::Custom(300), i, e)),
     }
 }
 
@@ -122,7 +124,7 @@ fn parse_name_to_string<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], St
         // Offsets:
         192...255 => parse_offset(data, i),
         // Unknown
-        _ => IResult::Error(ErrorKind::Custom(1)),
+        _ => Error(ErrorKind::Custom(1)),
     }
 }
 
@@ -132,74 +134,71 @@ named!(parse_root<&[u8], String>,
 
 fn parse_offset<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], String> {
     match be_u16(i) {
-        IResult::Done(output, tag_and_offset) => {
+        Done(output, tag_and_offset) => {
             let offset = (tag_and_offset & 0b0011_1111_1111_1111) as usize;
             let i2 = &data[offset..];
             match parse_name_to_string(data, i2) {
-                IResult::Done(_, name) => IResult::Done(output, name),
-                IResult::Error(e) => IResult::Error(e),
-                IResult::Incomplete(e) => IResult::Incomplete(e),
+                Done(_, name) => Done(output, name),
+                Error(e) => Error(e),
+                Incomplete(e) => Incomplete(e),
             }
         }
-        IResult::Error(e) => IResult::Error(e),
-        IResult::Incomplete(e) => IResult::Incomplete(e),
+        Error(e) => Error(e),
+        Incomplete(e) => Incomplete(e),
     }
 }
 
 fn parse_label<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], String> {
     match be_u8(i) {
-        IResult::Done(output, length) => {
+        Done(output, length) => {
             match parse_label_bytes(output, length as usize) {
-                IResult::Done(output, name_string) => {
-                    match parse_name_to_string(data, output) {
-                        IResult::Done(output, rem) => {
-                            let mut s = String::from(name_string);
-                            s.push_str(rem.as_str());
-                            IResult::Done(output, s)
-                        }
-                        IResult::Error(e) => IResult::Error(e),
-                        IResult::Incomplete(e) => IResult::Incomplete(e),
-                    }
+                Done(output, name_string) => {
+                    parse_name_to_string(data, output).map(|rem: String| {
+                        let mut s = String::from(name_string);
+                        s.push_str(rem.as_str());
+                        s
+                    })
                 }
-                IResult::Error(e) => IResult::Error(e),
-                IResult::Incomplete(e) => IResult::Incomplete(e),
+                Error(e) => Error(e),
+                Incomplete(e) => Incomplete(e),
             }
         }
-        IResult::Error(e) => IResult::Error(e),
-        IResult::Incomplete(e) => IResult::Incomplete(e),
+        Error(e) => Error(e),
+        Incomplete(e) => Incomplete(e),
     }
 }
 
 fn parse_label_bytes<'a>(i: &'a [u8], length: usize) -> IResult<&'a [u8], String> {
     match take!(i, length) {
-        IResult::Done(output, bytes) => {
+        Done(output, bytes) => {
             match validate_label_to_string(bytes) {
                 Ok(name_str) => {
                     let mut s = String::with_capacity(length + 1);
                     s.push_str(name_str);
                     s.push('.');
-                    return ::nom::IResult::Done(output, s);
+                    return Done(output, s);
                 }
-                Err(_) => IResult::Error(ErrorKind::Custom(100)),
+                Err(_) => Error(ErrorKind::Custom(100)),
             }
         }
-        IResult::Error(e) => IResult::Error(e),
-        IResult::Incomplete(e) => IResult::Incomplete(e),
+        Error(e) => Error(e),
+        Incomplete(e) => Incomplete(e),
     }
 }
 
+#[derive(Debug)]
 enum ParseError {
     UTF8Error(::std::str::Utf8Error),
     HyphenFirstCharacterError(()),
-    InvalidLabelCharacterError(()),
+    InvalidLabelCharacterError { c: char },
 }
 
 fn validate_label_to_string<'a>(input: &'a [u8]) -> ::std::result::Result<&'a str, ParseError> {
     for index in 0..input.len() {
         match input[index] as char {
-            'a'...'z' | 'A'...'Z' | '0'...'9' => (),
             '-' if index == 0 => return Err(ParseError::HyphenFirstCharacterError(())),
-            _ => return Err(ParseError::InvalidLabelCharacterError(())),
+            'a'...'z' | 'A'...'Z' | '0'...'9' | '-' => (),
+            c @ _ => return Err(ParseError::InvalidLabelCharacterError { c: c }),
         }
     }
     match ::std::str::from_utf8(input) {
