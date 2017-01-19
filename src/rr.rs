@@ -18,6 +18,8 @@ pub enum Type {
     CNAME,
     /// The 'SOA' resource type, marks the start of a zone of authority.
     SOA,
+    /// The 'OPT' pseudo-RR type, adding additional EDNS(0) information to a request / response.
+    OPT,
     /// Indicates that the type is not known to this parser.
     Unknown {
         /// The value of the unknown type
@@ -106,6 +108,19 @@ pub enum ResourceRecord {
         /// zone.
         minimum: u32,
     },
+    /// A pseudo-record containing additional EDNS(0) information.
+    OPT {
+        /// The requestor's UDP payload size.
+        payload_size: u16,
+        /// An extended response code.
+        extended_rcode: u8,
+        /// The specification version supported.
+        version: u8,
+        /// The `DNSSEC OK` bit.
+        dnssec_ok: bool,
+        /// Additional data in the form of attribute, value pairs.
+        data: Vec<u8>
+    },
     /// A yet-unknown type of resource record.
     Unknown {
         /// The `Name` this record applies to.
@@ -139,6 +154,7 @@ pub fn type_from(value: u16) -> Type {
         28u16 => Type::AAAA,
         5u16 => Type::CNAME,
         6u16 => Type::SOA,
+        41u16 => Type::OPT,
         _ => Type::Unknown { value: value },
     }
 }
@@ -179,6 +195,7 @@ pub fn parse_record<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Resour
                 Type::AAAA => parse_aaaa(output, name),
                 Type::CNAME => parse_cname(data, output, name),
                 Type::SOA => parse_soa(data, output, name),
+                Type::OPT => parse_opt(output, name),
                 Type::Unknown { value: a } => parse_unknown(output, name, a),
             };
         };
@@ -243,16 +260,6 @@ named!(parse_body_a<&[u8], (Class, i32, Ipv4Addr)>,
     )
 );
 
-// named!(parse_aaaa<&[u8], ResourceRecord>,
-// map!(parse_body_aaaa, |args: (Class, i32, Ipv6Addr)| {
-//     ResourceRecord::AAAA {
-//         name: name,
-//         class: args.0,
-//         ttl: args.1,
-//         addr: args.2,
-//     }
-// })
-// );
 fn parse_aaaa<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
     parse_body_aaaa(i).map(|args: (Class, i32, Ipv6Addr)| {
         ResourceRecord::AAAA {
@@ -390,6 +397,34 @@ named!(parse_body_soa_2<&[u8], (u32, u32, u32, u32, u32)>,
     )
 );
 
+fn parse_opt<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
+    if !name.is_root() {
+        return Error(ErrorKind::Custom(410));
+    }
+    parse_body_opt(i).map(|args: (u16, u8, u8, u16, &[u8])| {
+        let mut vec = Vec::with_capacity(args.4.len());
+        vec.extend(args.4.iter().cloned());
+        ResourceRecord::OPT {
+            payload_size: args.0,
+            extended_rcode: args.1,
+            version: args.2,
+            dnssec_ok: (args.3 & 0b1000_0000_0000_0000) != 0,
+            data: vec,
+        }
+    })
+}
+
+named!(parse_body_opt<&[u8], (u16, u8, u8, u16, &[u8])>,
+    do_parse!(
+        payload_size: be_u16 >>
+        rcode: be_u8 >>
+        version: be_u8 >>
+        flags: be_u16 >>
+        length: be_u16 >>
+        data: take!(length) >>
+        ((payload_size, rcode, version, flags, data))
+    )
+);
 
 impl fmt::Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

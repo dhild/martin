@@ -38,6 +38,11 @@ impl Name {
     pub fn name(&self) -> &String {
         &self.name
     }
+
+    /// Determines whether this name represents the root name.
+    pub fn is_root(&self) -> bool {
+        self.name.len() == 0
+    }
 }
 
 /// An error returned when parsing a domain name

@@ -247,12 +247,12 @@ mod tests {
         let data = include_bytes!("../assets/captures/dns_4_query.bin");
         let header = Header::query(0x60ff, Opcode::Query, true, 1).additional(1);
         let question = Question::new("gmail.com.", QType::Any, Class::Internet).unwrap();
-        let unknown = ResourceRecord::Unknown {
-            name: "".parse().unwrap(),
-            rtype: 41,
-            class: Class::Unknown { value: 4096 },
-            ttl: 0,
-            data: vec![]
+        let opt = ResourceRecord::OPT {
+            payload_size: 4096,
+            extended_rcode: 0,
+            version: 0,
+            dnssec_ok: false,
+            data: vec![],
         };
         assert_eq!(parse_message(&data[..]),
                    Done(&b""[..],
@@ -261,7 +261,7 @@ mod tests {
                             questions: vec![question],
                             answers: Vec::new(),
                             authorities: Vec::new(),
-                            additionals: vec![unknown],
+                            additionals: vec![opt],
                         }));
     }
 
