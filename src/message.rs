@@ -265,4 +265,129 @@ mod tests {
                         }));
     }
 
+    #[test]
+    fn parse_response_4() {
+        let data = include_bytes!("../assets/captures/dns_4_response.bin");
+        let query = Header::query(0x60ff, Opcode::Query, true, 1).additional(1);
+        let header = Header::response(query, true).answers(13).additional(1);
+        let question = Question::new("gmail.com.", QType::Any, Class::Internet).unwrap();
+        let opt = ResourceRecord::OPT {
+            payload_size: 512,
+            extended_rcode: 0,
+            version: 0,
+            dnssec_ok: false,
+            data: vec![],
+        };
+        let a = ResourceRecord::A {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 299,
+            addr: "216.58.216.165".parse().unwrap(),
+        };
+        let aaaa = ResourceRecord::AAAA {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 299,
+            addr: "2607:f8b0:400a:807::2005".parse().unwrap(),
+        };
+        let mx1 = ResourceRecord::MX {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 3599,
+            preference: 20,
+            exchange: "alt2.gmail-smtp-in.l.google.com.".parse().unwrap(),
+        };
+        let ns1 = ResourceRecord::NS {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 86399,
+            ns_name: "ns3.google.com.".parse().unwrap(),
+        };
+        let ns2 = ResourceRecord::NS {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 86399,
+            ns_name: "ns4.google.com.".parse().unwrap(),
+        };
+        let soa = ResourceRecord::SOA {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 59,
+            mname: "ns3.google.com.".parse().unwrap(),
+            rname: "dns-admin.google.com.".parse().unwrap(),
+            serial: 144520436,
+            refresh: 900,
+            retry: 900,
+            expire: 1800,
+            minimum: 60,
+        };
+        let ns3 = ResourceRecord::NS {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 86399,
+            ns_name: "ns1.google.com.".parse().unwrap(),
+        };
+        let txt = ResourceRecord::TXT {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 299,
+            data: vec![String::from("v=spf1 redirect=_spf.google.com")],
+        };
+        let mx2 = ResourceRecord::MX {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 3599,
+            preference: 30,
+            exchange: "alt3.gmail-smtp-in.l.google.com.".parse().unwrap(),
+        };
+        let ns4 = ResourceRecord::NS {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 86399,
+            ns_name: "ns2.google.com.".parse().unwrap(),
+        };
+        let mx3 = ResourceRecord::MX {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 3599,
+            preference: 40,
+            exchange: "alt4.gmail-smtp-in.l.google.com.".parse().unwrap(),
+        };
+        let mx4 = ResourceRecord::MX {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 3599,
+            preference: 10,
+            exchange: "alt1.gmail-smtp-in.l.google.com.".parse().unwrap(),
+        };
+        let mx5 = ResourceRecord::MX {
+            name: "gmail.com.".parse().unwrap(),
+            class: Class::Internet,
+            ttl: 3599,
+            preference: 5,
+            exchange: "gmail-smtp-in.l.google.com.".parse().unwrap(),
+        };
+        let questions = vec![question];
+        let answers = vec![a, aaaa, mx1, ns1, ns2, soa, ns3, txt, mx2, ns4, mx3, mx4, mx5];
+        let additionals = vec![opt];
+        let (_, res) = parse_message(&data[..]).unwrap();
+        assert_eq!(res.header, header);
+        assert_eq!(res.questions, questions);
+        for i in 0..13 {
+            assert_eq!(res.answers[i], answers[i]);
+        }
+        assert_eq!(res.answers, answers);
+        assert_eq!(res.authorities, vec![]);
+        assert_eq!(res.additionals, additionals);
+        assert_eq!(parse_message(&data[..]),
+                   Done(&b""[..],
+                        Message {
+                            header: header,
+                            questions: questions,
+                            answers: answers,
+                            authorities: vec![],
+                            additionals: additionals,
+                        }));
+    }
+
 }
