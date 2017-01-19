@@ -1,4 +1,5 @@
 use nom::{be_u16, IResult};
+use nom::IResult::*;
 use super::names::{Name, parse_name, NameParseError};
 use super::rr::{Class, Type, parse_class, type_from};
 
@@ -33,33 +34,26 @@ impl Question {
 }
 
 pub fn parse_question<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Question> {
-    match parse_name(data, i) {
-        IResult::Done(output, name) => {
-            parse_fields(output).map(|args: (QType, Class)| {
-                Question {
-                    qname: name,
-                    qtype: args.0,
-                    qclass: args.1,
-                }
-            })
-        }
-        IResult::Error(e) => IResult::Error(e),
-        IResult::Incomplete(e) => IResult::Incomplete(e),
-    }
+    let (o1, name) = match parse_name(data, i) {
+        Done(o, r) => (o, r),
+        Error(e) => return Error(e),
+        Incomplete(e) => return Incomplete(e),
+    };
+    let (o2, qtype) = try_parse!(o1, map!(be_u16, qtype_from));
+    let (output, qclass) = try_parse!(o2, parse_class);
+    Done(output,
+         Question {
+             qname: name,
+             qtype: qtype,
+             qclass: qclass,
+         })
 }
 
 fn qtype_from(bits: u16) -> QType {
     match type_from(bits) {
-        Type::Unknown {value: 252} => QType::ZoneTransfer,
-        Type::Unknown {value: 253} => QType::MailRecords,
-        Type::Unknown {value: 255} => QType::Any,
+        Type::Unknown { value: 252 } => QType::ZoneTransfer,
+        Type::Unknown { value: 253 } => QType::MailRecords,
+        Type::Unknown { value: 255 } => QType::Any,
         t @ _ => QType::ByType(t),
     }
 }
-
-named!(parse_fields<&[u8], (QType, Class)>,
-do_parse!(
-    qtype:  map!(be_u16, qtype_from) >>
-    qclass: parse_class >>
-    ((qtype, qclass))
-));
