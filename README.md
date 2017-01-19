@@ -1,8 +1,8 @@
-# dns-rs
+# martin
 
-A Rust library for dealing with resource records and other DNS concepts.
+A Rust library for parsing DNS messages.
 
-[![Build Status](https://travis-ci.org/dhild/dns-rs.svg)](https://travis-ci.org/dhild/dns-rs) [![Coverage Status](https://coveralls.io/repos/dhild/dns-rs/badge.svg?branch=master&service=github)](https://coveralls.io/github/dhild/dns-rs?branch=master)
+[![Build Status](https://travis-ci.org/dhild/martin.svg)](https://travis-ci.org/dhild/martin) [![Coverage Status](https://coveralls.io/repos/dhild/martin/badge.svg?branch=master&service=github)](https://coveralls.io/github/dhild/martin?branch=master)
 
 
 ## License

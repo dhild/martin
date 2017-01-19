@@ -1,5 +1,5 @@
-//! A Rust library for dealing with resource records and other DNS concepts.
-#![doc(html_root_url = "https://dhild.github.io/dns-rs/")]
+//! A Rust library for parsing resource records.
+#![doc(html_root_url = "https://dhild.github.io/martin/")]
 #![deny(missing_docs,
         missing_debug_implementations, missing_copy_implementations,
         trivial_casts,

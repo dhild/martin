@@ -23,7 +23,7 @@ script:
 after_success:
 - travis-cargo --only stable doc-upload
 - travis-cargo coveralls --no-sudo --verify
-- ./kcov/build/src/kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/kcov target/debug/dns_rs-*
+- ./kcov/build/src/kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/kcov target/debug/martin-*
 # necessary for `travis-cargo coveralls --no-sudo`
 addons:
   apt:
