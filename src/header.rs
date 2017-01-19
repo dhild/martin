@@ -6,6 +6,7 @@ pub enum Opcode {
     Query,
     InverseQuery,
     Status,
+    Unknown { value: u8 }
 }
 
 /// Response types
@@ -17,6 +18,7 @@ pub enum Rcode {
     NameError,
     NotImplemented,
     Refused,
+    Unknown { value: u8 },
 }
 
 /// Header for resource record queries and responses
@@ -156,36 +158,36 @@ impl Header {
 // |                    ARCOUNT                    |
 // +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 
-fn opcode_from(bits: u8) -> Option<Opcode> {
+fn opcode_from(bits: u8) -> Opcode {
     match bits {
-        0 => Some(Opcode::Query),
-        1 => Some(Opcode::InverseQuery),
-        2 => Some(Opcode::Status),
-        _ => None,
+        0 => Opcode::Query,
+        1 => Opcode::InverseQuery,
+        2 => Opcode::Status,
+        x @ _ => Opcode::Unknown { value: x },
     }
 }
-fn rcode_from(bits: u8) -> Option<Rcode> {
+fn rcode_from(bits: u8) -> Rcode {
     match bits {
-        0 => Some(Rcode::NoError),
-        1 => Some(Rcode::FormatError),
-        2 => Some(Rcode::ServerFailure),
-        3 => Some(Rcode::NameError),
-        4 => Some(Rcode::NotImplemented),
-        5 => Some(Rcode::Refused),
-        _ => None,
+        0 => Rcode::NoError,
+        1 => Rcode::FormatError,
+        2 => Rcode::ServerFailure,
+        3 => Rcode::NameError,
+        4 => Rcode::NotImplemented,
+        5 => Rcode::Refused,
+        x @ _ => Rcode::Unknown { value: x },
     }
 }
 
 named!(header_flags<&[u8], (bool, Opcode, bool, bool, bool, bool, Rcode)>,
 bits!(do_parse!(
      qr:     take_bits!( u8, 1 ) >>
-     opcode: map_opt!(take_bits!( u8, 4 ), opcode_from) >>
+     opcode: map!(take_bits!( u8, 4 ), opcode_from) >>
      aa:     take_bits!( u8, 1 ) >>
      tc:     take_bits!( u8, 1 ) >>
      rd:     take_bits!( u8, 1 ) >>
      ra:     take_bits!( u8, 1 ) >>
      zero:   take_bits!( u8, 3 ) >>
-     rcode:  map_opt!(take_bits!( u8, 4 ), rcode_from) >>
+     rcode:  map!(take_bits!( u8, 4 ), rcode_from) >>
      (((qr == 1), opcode, (aa == 1), (tc == 1), (rd == 1), (ra == 1), rcode))
 )));
 
