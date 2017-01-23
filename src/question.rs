@@ -6,9 +6,13 @@ use super::rr::{Class, Type, parse_class, type_from};
 /// A type of query
 #[derive(Debug,Clone,PartialEq,Copy)]
 pub enum QType {
+    /// The type of record being queried.
     ByType(Type),
+    /// A query requesting a zone transfer.
     ZoneTransfer,
+    /// A query requesting all mailbox-related records.
     MailRecords,
+    /// A query requesting all records for a name.
     Any,
 }
 
@@ -33,12 +37,8 @@ impl Question {
     }
 }
 
-pub fn parse_question<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Question> {
-    let (o1, name) = match parse_name(data, i) {
-        Done(o, r) => (o, r),
-        Error(e) => return Error(e),
-        Incomplete(e) => return Incomplete(e),
-    };
+pub fn parse_question<'a>(i: &'a [u8], data: &'a[u8]) -> IResult<&'a [u8], Question> {
+    let (o1, name) = try_parse!(i, apply!(parse_name, data));
     let (o2, qtype) = try_parse!(o1, map!(be_u16, qtype_from));
     let (output, qclass) = try_parse!(o2, parse_class);
     Done(output,

@@ -58,14 +58,42 @@ pub enum NameParseError {
 
 impl fmt::Display for NameParseError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        use std::error::Error;
-        fmt.write_str(self.description())
+        use self::NameParseError::*;
+        match *self {
+            TotalLengthGreaterThan255(x) => {
+                write!(fmt, "Name length must be less than 255, was {}", x)
+            }
+            LabelLengthGreaterThan63(x) => {
+                write!(fmt, "Label length must be less than 63, was {}", x)
+            }
+            InvalidCharacter(x) => {
+                write!(fmt,
+                       "Valid characters are a-z, A-Z, and '-'. Found: '\\x{:x}'",
+                       x as u32)
+            }
+            HypenFirstCharacterInLabel => {
+                write!(fmt, "Hyphen ('-') cannot be the first character in a label")
+            }
+            NameMustEndInRootLabel => write!(fmt, "Names must end in the root label ('.')"),
+            EmptyNonRootLabel => {
+                write!(fmt,
+                       "The root label is only allowed at the end of names (found \"..\")")
+            }
+        }
     }
 }
 
 impl error::Error for NameParseError {
     fn description(&self) -> &str {
-        "invalid domain name syntax"
+        use self::NameParseError::*;
+        match *self {
+            TotalLengthGreaterThan255(_) => "Name length must be less than 255",
+            LabelLengthGreaterThan63(_) => "Label length must be less than 63",
+            InvalidCharacter(_) => "Valid characters are a-z, A-Z, and '-'.",
+            HypenFirstCharacterInLabel => "Hyphen ('-') cannot be the first character in a label",
+            NameMustEndInRootLabel => "Names must end in the root label ('.')",
+            EmptyNonRootLabel => "The root label is only allowed at the end of names",
+        }
     }
 }
 
@@ -114,86 +142,45 @@ impl fmt::Display for Name {
 }
 
 /// Parses a byte stream into a `Name`
-pub fn parse_name<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], Name> {
-    match parse_name_to_string(data, i) {
-        Done(output, name_string) => Done(output, Name { name: name_string }),
-        Incomplete(e) => Incomplete(e),
-        Error(e) => Error(error_node_position!(ErrorKind::Custom(300), i, e)),
-    }
+pub fn parse_name<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Name> {
+    return_error!(i,
+                  ErrorKind::Custom(300),
+                  map!(apply!(parse_name_to_string, data),
+                       |name_string: String| Name { name: name_string }))
 }
 
-fn parse_name_to_string<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], String> {
-    match i[0] {
+fn parse_name_to_string<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], String> {
+    let (_, tag) = try_parse!(i, be_u8);
+    match tag {
         0 => parse_root(i),
-        1...63 => parse_label(data, i),
+        1...63 => parse_label(i, data),
         // Offsets:
-        192...255 => parse_offset(data, i),
+        192...255 => parse_offset(i, data),
         // Unknown
         _ => Error(ErrorKind::Custom(1)),
     }
 }
 
-named!(parse_root<&[u8], String>,
-    value!(String::from(""), tag!(&[ 0u8 ][..]))
-);
+named!(parse_root<&[u8], String>, value!(String::from(""), tag!(&[ 0u8 ][..])));
 
-fn parse_offset<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], String> {
-    match be_u16(i) {
-        Done(output, tag_and_offset) => {
-            let offset = (tag_and_offset & 0b0011_1111_1111_1111) as usize;
-            let i2 = &data[offset..];
-            match parse_name_to_string(data, i2) {
-                Done(_, name) => Done(output, name),
-                Error(e) => Error(e),
-                Incomplete(e) => Incomplete(e),
-            }
-        }
-        Error(e) => Error(e),
-        Incomplete(e) => Incomplete(e),
-    }
+fn parse_offset<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], String> {
+    let (output, offset) =
+        try_parse!(i, map!(be_u16, |t_o: u16| {(t_o & 0b0011_1111_1111_1111) as usize}));
+    let (_, name) = try_parse!(&data[offset..], apply!(parse_name_to_string, data));
+    Done(output, name)
 }
 
-fn parse_label<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], String> {
-    match be_u8(i) {
-        Done(output, length) => {
-            match parse_label_bytes(output, length as usize) {
-                Done(output, name_string) => {
-                    parse_name_to_string(data, output).map(|rem: String| {
-                        let mut s = String::from(name_string);
-                        s.push_str(rem.as_str());
-                        s
-                    })
-                }
-                Error(e) => Error(e),
-                Incomplete(e) => Incomplete(e),
-            }
-        }
-        Error(e) => Error(e),
-        Incomplete(e) => Incomplete(e),
-    }
-}
-
-fn parse_label_bytes<'a>(i: &'a [u8], length: usize) -> IResult<&'a [u8], String> {
-    match take!(i, length) {
-        Done(output, bytes) => {
-            match validate_label_to_string(bytes) {
-                Ok(name_str) => {
-                    let mut s = String::with_capacity(length + 1);
-                    s.push_str(name_str);
-                    s.push('.');
-                    return Done(output, s);
-                }
-                Err(_) => Error(ErrorKind::Custom(100)),
-            }
-        }
-        Error(e) => Error(e),
-        Incomplete(e) => Incomplete(e),
-    }
+fn parse_label<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], String> {
+    do_parse!(i,
+        length: be_u8 >>
+        label: map_res!(take!(length), validate_label_to_string) >>
+        rem: apply!(parse_name_to_string, data) >>
+        ({label.to_string() + "." + &rem})
+    )
 }
 
 #[derive(Debug)]
 enum ParseError {
-    UTF8Error(::std::str::Utf8Error),
     HyphenFirstCharacterError(()),
     InvalidLabelCharacterError { c: char },
 }
@@ -208,7 +195,7 @@ fn validate_label_to_string<'a>(input: &'a [u8]) -> ::std::result::Result<&'a st
     }
     match ::std::str::from_utf8(input) {
         Ok(v) => Ok(v),
-        Err(e) => Err(ParseError::UTF8Error(e)),
+        Err(_) => unreachable!(),
     }
 }
 
@@ -269,15 +256,17 @@ mod tests {
         // 46: <root>
         let a = b"12345678901234567890\x01F\x03ISI\x04ARPA\x0012345678\x03FOO\xC0\x14\x00abcd";
 
-        assert_eq!(parse_name(&a[..], &a[20..]),
+        assert_eq!(parse_name(&a[20..], &a[..]),
                    Done(&a[32..], Name { name: String::from("F.ISI.ARPA.") }));
-        assert_eq!(parse_name(&a[..], &a[22..]),
+        assert_eq!(parse_name(&a[22..], &a[..]),
                    Done(&a[32..], Name { name: String::from("ISI.ARPA.") }));
-        assert_eq!(parse_name(&a[..], &a[40..]),
+        assert_eq!(parse_name(&a[40..], &a[..]),
                    Done(&a[46..], Name { name: String::from("FOO.F.ISI.ARPA.") }));
-        assert_eq!(parse_name(&a[..], &a[44..]),
-                   Done(&a[46..], Name { name: String::from("F.ISI.ARPA.") }));
-        assert_eq!(parse_name(&a[..], &a[46..]),
-                   Done(&a[47..], Name { name: String::from("") }));
+        // This one is fun: make sure that extra names aren't swallowed or parsed:
+        assert_eq!(parse_name(&a[44..], &a[..]),
+                   Done(&b"\x00abcd"[..], Name { name: String::from("F.ISI.ARPA.") }));
+        assert_eq!(parse_name(&a[46..], &a[..]),
+                   Done(&b"abcd"[..], Name { name: String::from("") }));
     }
+
 }

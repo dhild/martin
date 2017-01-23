@@ -3,21 +3,35 @@ use nom::be_u16;
 /// Query operation types
 #[derive(Debug,Clone,Copy,PartialEq)]
 pub enum Opcode {
+    /// Standard query
     Query,
+    /// Inverse query
     InverseQuery,
+    /// Status request
     Status,
-    Unknown { value: u8 }
+    /// Placeholder for values unknown to this library.
+    Unknown {
+        /// The actual byte value of the (unrecognized) opcode.
+        value: u8
+     }
 }
 
 /// Response types
 #[derive(Debug,Clone,Copy,PartialEq)]
 pub enum Rcode {
+    /// No error condition.
     NoError,
+    /// The name server was unable to interpret the query.
     FormatError,
+    /// There was a problem with the name server.
     ServerFailure,
+    /// (Authoritative server only) - signifies the domain name does not exist.
     NameError,
+    /// The requested query is not implemented.
     NotImplemented,
+    /// The query was refused for policy reasons.
     Refused,
+    /// Placeholder for values unknown to this library.
     Unknown { value: u8 },
 }
 

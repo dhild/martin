@@ -2,7 +2,7 @@
 
 use names::{Name, parse_name};
 
-use nom::{be_u8, be_u16, be_u32, be_i32, IResult, Needed, ErrorKind};
+use nom::{be_u8, be_u16, be_u32, be_i32, IResult, ErrorKind};
 use nom::IResult::*;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use super::{Class, Type, class_from, type_from, ResourceRecord};
@@ -37,25 +37,17 @@ named!(pub parse_type(&[u8]) -> Type,
 // +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 
 /// Parses a byte stream into a `ResourceRecord`
-pub fn parse_record<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], ResourceRecord> {
-    let (o1, name) = match parse_name(data, i) {
-        Done(o, r) => (o, r),
-        Error(e) => return Error(e),
-        Incomplete(e) => return Incomplete(e),
-    };
-    let (output, rtype) = match parse_type(o1) {
-        Done(o, r) => (o, r),
-        Error(e) => return Error(error_node_position!(ErrorKind::Custom(401), i, e)),
-        Incomplete(e) => return Incomplete(e),
-    };
+pub fn parse_record<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], ResourceRecord> {
+    let (output, name) = try_parse!(i, apply!(parse_name, data));
+    let (output, rtype) = try_parse!(output, parse_type);
     match rtype {
         Type::A => parse_a(output, name),
         Type::AAAA => parse_aaaa(output, name),
-        Type::CNAME => parse_cname(data, output, name),
-        Type::SOA => parse_soa(data, output, name),
+        Type::CNAME => parse_cname(output, data, name),
+        Type::SOA => parse_soa(output, data, name),
         Type::OPT => parse_opt(output, name),
-        Type::MX => parse_mx(data, output, name),
-        Type::NS => parse_ns(data, output, name),
+        Type::MX => parse_mx(output, data, name),
+        Type::NS => parse_ns(output, data, name),
         Type::TXT => parse_txt(output, name),
         Type::Unknown { value: a } => parse_unknown(output, name, a),
     }
@@ -137,175 +129,135 @@ named!(parse_body_aaaa<&[u8], (Class, i32, Ipv6Addr)>,
     )
 );
 
-fn parse_cname<'a>(data: &'a [u8], i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    parse_simple_name(data, i).map(|args: (Class, i32, Name)| {
-        ResourceRecord::CNAME {
-            name: name,
-            class: args.0,
-            ttl: args.1,
-            cname: args.2,
-        }
-    })
-}
-
-fn parse_simple_name<'a>(data: &'a [u8], i: &'a [u8]) -> IResult<&'a [u8], (Class, i32, Name)> {
-    let (output, (class, ttl, length)) = try_parse!(i, parse_simple_body);
-    match parse_name(data, output) {
-        Done(_, second_name) => Done(&output[length..], (class, ttl, second_name)),
-        Error(e) => Error(e),
-        Incomplete(e) => Incomplete(e),
-    }
-}
-
-named!(parse_simple_body<&[u8], (Class, i32, usize)>,
-    do_parse!(
+fn parse_cname<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
+    do_parse!(i,
         class: parse_class >>
         ttl: be_i32 >>
-        length: be_u16 >>
-        ((class, ttl, length as usize))
+        rr: length_value!(be_u16,
+            do_parse!(
+                cname: apply!(parse_name, data) >>
+                (ResourceRecord::CNAME {
+                    name: name,
+                    class: class,
+                    ttl: ttl,
+                    cname: cname,
+                })
+            )
+        ) >>
+        (rr)
     )
-);
-
-fn parse_ns<'a>(data: &'a [u8], i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    parse_simple_name(data, i).map(|args: (Class, i32, Name)| {
-        ResourceRecord::NS {
-            name: name,
-            class: args.0,
-            ttl: args.1,
-            ns_name: args.2,
-        }
-    })
 }
 
-fn parse_soa<'a>(data: &'a [u8], i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    let (output, (class, ttl, length)) = try_parse!(i, parse_body_soa_1);
-    if output.len() < length {
-        let size = length - output.len();
-        return Incomplete(Needed::Size(size));
-    };
-    let (o2, mname) = match parse_name(data, output) {
-        Done(o, r) => (o, r),
-        Error(e) => return Error(e),
-        Incomplete(e) => return Incomplete(e),
-    };
-    let (o3, rname) = match parse_name(data, o2) {
-        Done(o, r) => (o, r),
-        Error(e) => return Error(e),
-        Incomplete(e) => return Incomplete(e),
-    };
-    let (_, (serial, refresh, retry, expire, minimum)) = try_parse!(o3, parse_body_soa_2);
-    Done(&output[length..],
-         ResourceRecord::SOA {
-             name: name,
-             class: class,
-             ttl: ttl,
-             mname: mname,
-             rname: rname,
-             serial: serial,
-             refresh: refresh,
-             retry: retry,
-             expire: expire,
-             minimum: minimum,
-         })
-}
-
-named!(parse_body_soa_1<&[u8], (Class, i32, usize)>,
-    do_parse!(
+fn parse_ns<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
+    do_parse!(i,
         class: parse_class >>
         ttl: be_i32 >>
-        length: be_u16 >>
-        ((class, ttl, length as usize))
+        rr: length_value!(be_u16,
+            do_parse!(
+                ns_name: apply!(parse_name, data) >>
+                (ResourceRecord::NS {
+                    name: name,
+                    class: class,
+                    ttl: ttl,
+                    ns_name: ns_name,
+                })
+            )
+        ) >>
+        (rr)
     )
-);
+}
 
-named!(parse_body_soa_2<&[u8], (u32, u32, u32, u32, u32)>,
-    do_parse!(
-        serial: be_u32 >>
-        refresh: be_u32 >>
-        retry: be_u32 >>
-        expire: be_u32 >>
-        minimum: be_u32 >>
-        ((serial, refresh, retry, expire, minimum))
+fn parse_soa<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
+    do_parse!(i,
+        class: parse_class >>
+        ttl: be_i32 >>
+        soa: length_value!(be_u16,
+            do_parse!(
+                mname: apply!(parse_name, data) >>
+                rname: apply!(parse_name, data) >>
+                serial: be_u32 >>
+                refresh: be_u32 >>
+                retry: be_u32 >>
+                expire: be_u32 >>
+                minimum: be_u32 >>
+                (ResourceRecord::SOA {
+                    name: name,
+                    class: class,
+                    ttl: ttl,
+                    mname: mname,
+                    rname: rname,
+                    serial: serial,
+                    refresh: refresh,
+                    retry: retry,
+                    expire: expire,
+                    minimum: minimum,
+                })
+            )
+        ) >>
+        (soa)
     )
-);
+}
 
 fn parse_opt<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
     if !name.is_root() {
         return Error(ErrorKind::Custom(410));
     }
-    parse_body_opt(i).map(|args: (u16, u8, u8, u16, &[u8])| {
-        let mut vec = Vec::with_capacity(args.4.len());
-        vec.extend(args.4.iter().cloned());
-        ResourceRecord::OPT {
-            payload_size: args.0,
-            extended_rcode: args.1,
-            version: args.2,
-            dnssec_ok: (args.3 & 0b1000_0000_0000_0000) != 0,
-            data: vec,
-        }
-    })
-}
-
-named!(parse_body_opt<&[u8], (u16, u8, u8, u16, &[u8])>,
-    do_parse!(
+    do_parse!(i,
         payload_size: be_u16 >>
         rcode: be_u8 >>
         version: be_u8 >>
         flags: be_u16 >>
         length: be_u16 >>
         data: take!(length) >>
-        ((payload_size, rcode, version, flags, data))
+        (ResourceRecord::OPT {
+                payload_size: payload_size,
+                extended_rcode: rcode,
+                version: version,
+                dnssec_ok: (flags & 0b1000_0000_0000_0000) != 0,
+                data: {
+                    let mut vec = Vec::with_capacity(length as usize);
+                    vec.extend(data.iter().cloned());
+                    vec
+                },
+            })
     )
-);
-
-fn parse_mx<'a>(data: &'a [u8], i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    let (output, (class, ttl, length, preference)) = try_parse!(i, parse_body_mx);
-    match parse_name(data, output) {
-        Done(_, exchange) => {
-            Done(&output[length..],
-                 ResourceRecord::MX {
-                     name: name,
-                     class: class,
-                     ttl: ttl,
-                     preference: preference,
-                     exchange: exchange,
-                 })
-        }
-        Error(e) => Error(e),
-        Incomplete(e) => Incomplete(e),
-    }
 }
 
-named!(parse_body_mx<&[u8], (Class, i32, usize, u16)>,
-    do_parse!(
+fn parse_mx<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
+    do_parse!(i,
         class: parse_class >>
         ttl: be_i32 >>
-        length: be_u16 >>
-        preference: be_u16 >>
-        ((class, ttl, (length - 2) as usize, preference))
+        rr: length_value!(be_u16,
+            do_parse!(
+                preference: be_u16 >>
+                exchange: apply!(parse_name, data) >>
+                (ResourceRecord::MX {
+                    name: name,
+                    class: class,
+                    ttl: ttl,
+                    preference: preference,
+                    exchange: exchange,
+                })
+            )
+        ) >>
+        (rr)
     )
-);
-
-fn parse_txt<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    let (output, (class, ttl, data)) = try_parse!(i, parse_body_txt);
-    Done(output,
-         ResourceRecord::TXT {
-             name: name,
-             class: class,
-             ttl: ttl,
-             data: data,
-         })
 }
 
-named!(parse_body_txt<&[u8], (Class, i32, Vec<String>)>,
-    do_parse!(
+fn parse_txt<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
+    do_parse!(i,
         class: parse_class >>
         ttl: be_i32 >>
         length: be_u16 >>
         bytes: flat_map!( take!( length ), many1!( parse_char_string ) ) >>
-        ((class, ttl, bytes))
+        (ResourceRecord::TXT {
+            name: name,
+            class: class,
+            ttl: ttl,
+            data: bytes,
+        })
     )
-);
+}
 
 named!(parse_char_string<&[u8], String>,
     do_parse!(
