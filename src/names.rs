@@ -264,4 +264,36 @@ mod tests {
                    Done(&b"abcd"[..], Name { name: String::from("") }));
     }
 
+    #[test]
+    fn name_parse_errors() {
+        use super::NameParseError::*;
+        let name = {
+            let mut s = String::from("test.");
+            while s.len() < 255 {
+                s += "test.";
+            }
+            s
+        };
+        assert_eq!(name.parse::<Name>(), Err(TotalLengthGreaterThan255(name.len())));
+
+        let name = {
+            let mut s = String::from("test");
+            while s.len() < 63 {
+                s += "test";
+            }
+            s += ".";
+            s
+        };
+        assert_eq!(name.parse::<Name>(), Err(LabelLengthGreaterThan63(name.len() - 1)));
+
+        let name = "test!.";
+        assert_eq!(name.parse::<Name>(), Err(InvalidCharacter('!')));
+
+        let name = "-test.";
+        assert_eq!(name.parse::<Name>(), Err(HypenFirstCharacterInLabel));
+        let name = "te.st";
+        assert_eq!(name.parse::<Name>(), Err(NameMustEndInRootLabel));
+        let name = "test..";
+        assert_eq!(name.parse::<Name>(), Err(EmptyNonRootLabel));
+    }
 }

@@ -207,7 +207,23 @@ impl fmt::Display for Class {
             Class::Internet => write!(f, "IN"),
             Class::Chaos => write!(f, "CH"),
             Class::Hesoid => write!(f, "HS"),
-            Class::Unknown { value: x } => write!(f, "Unkown({})", x),
+            Class::Unknown { value: x } => write!(f, "0x{:x}", x),
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Type::A => write!(f, "A"),
+            Type::AAAA => write!(f, "AAAA"),
+            Type::CNAME => write!(f, "CNAME"),
+            Type::SOA => write!(f, "SOA"),
+            Type::OPT => write!(f, "OPT"),
+            Type::MX => write!(f, "MX"),
+            Type::NS => write!(f, "NS"),
+            Type::TXT => write!(f, "TXT"),
+            Type::Unknown { value: x } => write!(f, "0x{:x}", x),
         }
     }
 }

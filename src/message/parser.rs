@@ -4,6 +4,7 @@ use nom::ErrorKind as nom_ek;
 use nom::IResult::*;
 use question::{Question, parse_question};
 use rr::{ResourceRecord, parse_record};
+use std::fmt;
 
 /// Represents the possible kinds of errors from parsing a message.
 #[derive(Debug,Clone,Copy)]
@@ -18,6 +19,25 @@ impl ErrorKind {
     fn from(e: nom_ek) -> ErrorKind {
         match e {
             _ => ErrorKind::FormatError("Unparseable input"),
+        }
+    }
+}
+
+impl fmt::Display for ErrorKind {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        use self::ErrorKind::*;
+        match *self {
+            Incomplete(Needed::Size(x)) => write!(fmt, "Incomplete, expected {} more bytes", x),
+            Incomplete(Needed::Unknown) => write!(fmt, "Incomplete, expected more bytes"),
+            FormatError(s) => write!(fmt, "Formatting error: {}", s),
+            LabelInvalidCharacter(c) => {
+                write!(fmt,
+                       "Valid label characters are a-z, A-Z, and '-'. Found: '\\x{:x}'",
+                       c as u32)
+            }
+            LabelHyphenAsFirstCharacter(()) => {
+                write!(fmt, "Hyphen ('-') found as the first character in a label")
+            }
         }
     }
 }
@@ -37,12 +57,12 @@ pub fn parse_message<'a>(i: &[u8])
 }
 
 pub fn do_parse_message<'a>(data: &[u8])
-                        -> IResult<&[u8],
-                                   (Header,
-                                    Vec<Question>,
-                                    Vec<ResourceRecord>,
-                                    Vec<ResourceRecord>,
-                                    Vec<ResourceRecord>)> {
+                            -> IResult<&[u8],
+                                       (Header,
+                                        Vec<Question>,
+                                        Vec<ResourceRecord>,
+                                        Vec<ResourceRecord>,
+                                        Vec<ResourceRecord>)> {
     let (output, header) = try_parse!(data, parse_header);
     let (output, questions) = try_parse!(output,
                                          many_m_n!(header.question_count as usize,
