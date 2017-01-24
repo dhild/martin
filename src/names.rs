@@ -7,13 +7,24 @@ use std::str::FromStr;
 /// Representation of a domain name
 ///
 /// Domain names consist of one or more labels, broken up by the character '.'.
+///
+/// ```
+/// # use martin::Name;
+/// let name: Name = "test.example.com.".parse().unwrap();
+/// assert_eq!("test", name.label());
+/// assert_eq!("test.example.com.", name.name());
+/// assert!(name != "test2.example.com.".parse().unwrap());
+/// ```
 #[derive(Debug,Hash,PartialEq,PartialOrd,Eq,Ord,Clone)]
 pub struct Name {
     name: String,
 }
 
 impl Name {
-    /// Returns the label for this `Name`
+    /// Returns the first label for this `Name`
+    ///
+    /// Labels in a domain name are broken up by the '.' character. A label is composed of the
+    /// characters 'a'-'z', 'A'-'Z', and '-'.
     pub fn label(&self) -> &str {
         match self.name.find('.') {
             Some(index) => &self.name[..index],
@@ -101,34 +112,25 @@ impl error::Error for NameParseError {
 impl FromStr for Name {
     type Err = NameParseError;
     fn from_str(s: &str) -> Result<Name, NameParseError> {
+        use self::NameParseError::*;
         // Counting the `0` bit for the root label length, the str length must be < 254
         if s.len() > 254 {
-            return Err(NameParseError::TotalLengthGreaterThan255(s.len()));
+            return Err(TotalLengthGreaterThan255(s.len()));
         }
         let mut label_len = 0;
         for c in s.chars() {
             match c {
-                '.' => {
-                    if label_len == 0 {
-                        return Err(NameParseError::EmptyNonRootLabel);
-                    }
-                    if label_len > 63 {
-                        return Err(NameParseError::LabelLengthGreaterThan63(label_len));
-                    }
-                    label_len = 0;
-                }
+                '.' if label_len == 0 => return Err(EmptyNonRootLabel),
+                '.' if label_len > 63 => return Err(LabelLengthGreaterThan63(label_len)),
+                '.' => label_len = 0,
                 'a'...'z' | 'A'...'Z' | '0'...'9' => label_len += 1,
-                '-' => {
-                    if label_len == 0 {
-                        return Err(NameParseError::HypenFirstCharacterInLabel);
-                    }
-                    label_len += 1;
-                }
-                c @ _ => return Err(NameParseError::InvalidCharacter(c)),
+                '-' if label_len == 0 => return Err(HypenFirstCharacterInLabel),
+                '-' => label_len += 1,
+                c @ _ => return Err(InvalidCharacter(c)),
             }
         }
         if label_len != 0 {
-            return Err(NameParseError::NameMustEndInRootLabel);
+            return Err(NameMustEndInRootLabel);
         }
         let name = String::from(s);
         Ok(Name { name: name })
@@ -205,49 +207,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn root_label_is_valid() {
+    fn parse_str_root_label() {
         let name = "".parse::<Name>().unwrap();
         assert_eq!("", name.label());
-    }
-
-    #[test]
-    fn root_parent_is_none() {
-        let name = "".parse::<Name>().unwrap();
+        assert_eq!("", name.name());
+        assert!(name.is_root());
         assert_eq!(None, name.parent());
     }
 
     #[test]
-    fn simple_label_is_valid() {
+    fn parse_str_simple_label() {
         let name = "raspberry.".parse::<Name>().unwrap();
         assert_eq!("raspberry", name.label());
+        assert_eq!("raspberry.", name.name());
+        assert!(!name.is_root());
+        assert!(name.parent().unwrap().is_root());
     }
 
     #[test]
-    fn simple_parent_is_root() {
-        let name = "raspberry.".parse::<Name>().unwrap();
-        let parent = name.parent().unwrap();
-        assert_eq!("", parent.label());
-    }
-
-    #[test]
-    fn multi_label_is_valid() {
+    fn parse_str_multi_label() {
         let name = "test.example.com.".parse::<Name>().unwrap();
         assert_eq!("test", name.label());
+        assert_eq!("test.example.com.", name.name());
+        assert!(!name.is_root());
+        let parent = name.parent().unwrap();
+        assert!(!parent.is_root());
+        assert_eq!("example", parent.label());
+        assert_eq!("example.com.", parent.name());
+        let parent = parent.parent().unwrap();
+        assert!(!parent.is_root());
+        assert_eq!("com", parent.label());
+        assert_eq!("com.", parent.name());
+        assert!(parent.parent().unwrap().is_root());
     }
 
     #[test]
-    fn multi_parent_is_valid() {
-        let name = "test.example.com.".parse::<Name>().unwrap();
-        let parent1 = name.parent().unwrap();
-        assert_eq!("example", parent1.label());
-        let parent2 = parent1.parent().unwrap();
-        assert_eq!("com", parent2.label());
-        let parent3 = parent2.parent().unwrap();
-        assert_eq!("", parent3.label());
-    }
-
-    #[test]
-    fn name_parse_test() {
+    fn name_parse_bytes_test() {
         // Contained names:
         // 20: F.ISI.ARPA.
         // 22: ISI.ARPA.
