@@ -8,10 +8,6 @@ use super::rr::{Class, Type, parse_class, type_from};
 pub enum QType {
     /// The type of record being queried.
     ByType(Type),
-    /// A query requesting a zone transfer.
-    ZoneTransfer,
-    /// A query requesting all mailbox-related records.
-    MailRecords,
     /// A query requesting all records for a name.
     Any,
 }
@@ -51,8 +47,6 @@ pub fn parse_question<'a>(i: &'a [u8], data: &'a[u8]) -> IResult<&'a [u8], Quest
 
 fn qtype_from(bits: u16) -> QType {
     match type_from(bits) {
-        Type::Unknown { value: 252 } => QType::ZoneTransfer,
-        Type::Unknown { value: 253 } => QType::MailRecords,
         Type::Unknown { value: 255 } => QType::Any,
         t @ _ => QType::ByType(t),
     }

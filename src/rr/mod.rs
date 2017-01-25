@@ -17,6 +17,8 @@ pub enum Type {
     AAAA,
     /// The `CNAME` resource type, holding the canonical name for an alias.
     CNAME,
+    /// The `PTR` resource type, pointing to a canonical name. Does not trigger `CNAME` processing.
+    PTR,
     /// The `SOA` resource type, marks the start of a zone of authority.
     SOA,
     /// The `OPT` pseudo-RR type, adding additional EDNS(0) information to a request / response.
@@ -115,6 +117,17 @@ pub enum ResourceRecord {
         /// zone.
         minimum: u32,
     },
+    /// Pointer to a canonical name.
+    PTR {
+        /// The `Name` this record applies to.
+        name: Name,
+        /// The `Class` this record applies to.
+        class: Class,
+        /// The "time to live" for this data, in seconds.
+        ttl: i32,
+        /// The canonical name pointed to in `name`.
+        ptrname: Name,
+    },
     /// Mail Exchange information.
     MX {
         /// The `Name` this record applies to.
@@ -193,6 +206,7 @@ pub fn type_from(value: u16) -> Type {
         2u16 => Type::NS,
         5u16 => Type::CNAME,
         6u16 => Type::SOA,
+        12u16 => Type::PTR,
         15u16 => Type::MX,
         16u16 => Type::TXT,
         28u16 => Type::AAAA,
@@ -219,6 +233,7 @@ impl fmt::Display for Type {
             Type::AAAA => write!(f, "AAAA"),
             Type::CNAME => write!(f, "CNAME"),
             Type::SOA => write!(f, "SOA"),
+            Type::PTR => write!(f, "PTR"),
             Type::OPT => write!(f, "OPT"),
             Type::MX => write!(f, "MX"),
             Type::NS => write!(f, "NS"),

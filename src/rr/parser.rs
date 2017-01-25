@@ -45,6 +45,7 @@ pub fn parse_record<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Resour
         Type::AAAA => parse_aaaa(output, name),
         Type::CNAME => parse_cname(output, data, name),
         Type::SOA => parse_soa(output, data, name),
+        Type::PTR => parse_ptr(output, data, name),
         Type::OPT => parse_opt(output, name),
         Type::MX => parse_mx(output, data, name),
         Type::NS => parse_ns(output, data, name),
@@ -141,6 +142,25 @@ fn parse_cname<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8],
                     class: class,
                     ttl: ttl,
                     cname: cname,
+                })
+            )
+        ) >>
+        (rr)
+    )
+}
+
+fn parse_ptr<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
+    do_parse!(i,
+        class: parse_class >>
+        ttl: be_i32 >>
+        rr: length_value!(be_u16,
+            do_parse!(
+                ptrname: apply!(parse_name, data) >>
+                (ResourceRecord::PTR {
+                    name: name,
+                    class: class,
+                    ttl: ttl,
+                    ptrname: ptrname,
                 })
             )
         ) >>
