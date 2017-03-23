@@ -12,12 +12,12 @@ use std::str::FromStr;
 /// # use martin::Name;
 /// let name: Name = "test.example.com.".parse().unwrap();
 /// assert_eq!("test", name.label());
-/// assert_eq!("test.example.com.", name.name());
+/// assert_eq!("test.example.com.", name.to_string());
 /// assert!(name != "test2.example.com.".parse().unwrap());
 /// ```
 #[derive(Debug,Hash,PartialEq,PartialOrd,Eq,Ord,Clone)]
 pub struct Name {
-    name: String,
+    name: Vec<u8>,
 }
 
 impl Name {
@@ -26,33 +26,26 @@ impl Name {
     /// Labels in a domain name are broken up by the '.' character. A label is composed of the
     /// characters 'a'-'z', 'A'-'Z', and '-'.
     pub fn label(&self) -> &str {
-        match self.name.find('.') {
-            Some(index) => &self.name[..index],
-            None => &self.name,
-        }
+        use std::str;
+        let length: usize = self.name[0] as usize;
+        str::from_utf8(&self.name[1..(length + 1)]).unwrap()
     }
 
     /// The parent is this `Name` without the left-most label
     pub fn parent(&self) -> Option<Name> {
-        match self.name.find('.') {
-            Some(index) => Some(Name { name: String::from(&self.name[(index + 1)..]) }),
-            None => {
-                match self.name.len() {
-                    0 => None,
-                    _ => Some(Name { name: String::from("") }),
-                }
+        match self.name[0] {
+            0 => None,
+            skip @ _ => {
+                let index: usize = 1 + skip as usize;
+                let p = self.name[index..].to_vec();
+                Some(Name { name: p })
             }
         }
     }
 
-    /// Gets the domain name as a `String`
-    pub fn name(&self) -> &String {
-        &self.name
-    }
-
     /// Determines whether this name represents the root name.
     pub fn is_root(&self) -> bool {
-        self.name.len() == 0
+        self.name == vec![0]
     }
 }
 
@@ -117,29 +110,55 @@ impl FromStr for Name {
         if s.len() > 254 {
             return Err(TotalLengthGreaterThan255(s.len()));
         }
+        if s == "." {
+            return Ok(Name { name: vec![0] });
+        }
+        let mut name: Vec<u8> = Vec::with_capacity(s.len() + 1);
+        let mut last_label_index = 0;
         let mut label_len = 0;
+        name.push(0); // First length byte
         for c in s.chars() {
             match c {
                 '.' if label_len == 0 => return Err(EmptyNonRootLabel),
                 '.' if label_len > 63 => return Err(LabelLengthGreaterThan63(label_len)),
-                '.' => label_len = 0,
-                'a'...'z' | 'A'...'Z' | '0'...'9' => label_len += 1,
+                '.' => {
+                    name[last_label_index] = label_len as u8;
+                    last_label_index = name.len();
+                    name.push(0);
+                    label_len = 0;
+                }
                 '-' if label_len == 0 => return Err(HypenFirstCharacterInLabel),
-                '-' => label_len += 1,
+                'a'...'z' | 'A'...'Z' | '0'...'9' | '-' => {
+                    label_len += 1;
+                    name.push(c as u8);
+                }
                 c @ _ => return Err(InvalidCharacter(c)),
             }
         }
         if label_len != 0 {
             return Err(NameMustEndInRootLabel);
         }
-        let name = String::from(s);
         Ok(Name { name: name })
     }
 }
 
 impl fmt::Display for Name {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.name)
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        use std::str;
+        let mut pos = 0;
+        loop {
+            match self.name[pos] {
+                0 => break,
+                length @ _ => {
+                    let start = (pos + 1) as usize;
+                    let end = start + length as usize;
+                    let label = str::from_utf8(&self.name[start..end]).unwrap();
+                    try!(write!(fmt, "{}.", label));
+                    pos = end;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -147,70 +166,64 @@ impl fmt::Display for Name {
 pub fn parse_name<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Name> {
     return_error!(i,
                   ErrorKind::Custom(300),
-                  map!(apply!(parse_name_to_string, data),
-                       |name_string: String| Name { name: name_string }))
+                  map!(apply!(do_parse_name, data, Vec::with_capacity(255)),
+                       |name_data: Vec<u8>| Name { name: name_data }))
 }
 
-fn parse_name_to_string<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], String> {
-    let (_, tag) = try_parse!(i, be_u8);
-    match tag {
-        0 => parse_root(i),
-        1...63 => parse_label(i, data),
-        // Offsets:
-        192...255 => parse_offset(i, data),
-        // Unknown
-        _ => Error(ErrorKind::Custom(1)),
-    }
-}
-
-named!(parse_root<&[u8], String>, value!(String::from(""), tag!(&[ 0u8 ][..])));
-
-fn parse_offset<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], String> {
-    let (output, offset) =
-        try_parse!(i, map!(be_u16, |t_o: u16| {(t_o & 0b0011_1111_1111_1111) as usize}));
-    let (_, name) = try_parse!(&data[offset..], apply!(parse_name_to_string, data));
-    Done(output, name)
-}
-
-fn parse_label<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], String> {
-    do_parse!(i,
-        length: be_u8 >>
-        label: map_res!(take!(length), validate_label_to_string) >>
-        rem: apply!(parse_name_to_string, data) >>
-        ({label.to_string() + "." + &rem})
-    )
-}
-
-#[derive(Debug)]
-enum ParseError {
-    HyphenFirstCharacterError(()),
-    InvalidLabelCharacterError { c: char },
-}
-
-fn validate_label_to_string<'a>(input: &'a [u8]) -> ::std::result::Result<&'a str, ParseError> {
-    for index in 0..input.len() {
-        match input[index] as char {
-            '-' if index == 0 => return Err(ParseError::HyphenFirstCharacterError(())),
-            'a'...'z' | 'A'...'Z' | '0'...'9' | '-' => (),
-            c @ _ => return Err(ParseError::InvalidLabelCharacterError { c: c }),
+fn do_parse_name<'a>(i: &'a [u8], data: &'a [u8], mut name: Vec<u8>) -> IResult<&'a [u8], Vec<u8>> {
+    let (out, length) = try_parse!(&i, be_u8);
+    match length {
+        0 => {
+            name.push(0);
+            if name.len() > 255 {
+                return Error(ErrorKind::Custom(1002));
+            }
+            return Done(out, name);
         }
-    }
-    match ::std::str::from_utf8(input) {
-        Ok(v) => Ok(v),
-        Err(_) => unreachable!(),
+        1...63 => {
+            name.push(length);
+            if (name.len() + (length as usize) + 1) > 255 {
+                // Plus the ending '0' makes this > 255.
+                return Error(ErrorKind::Custom(1003));
+            }
+            let (out2, bytes) = try_parse!(out, take!(length));
+            for (index, c) in bytes.iter().enumerate() {
+                match *c as char {
+                    '-' if index == 0 => return Error(ErrorKind::Custom(1004)),
+                    'a'...'z' | 'A'...'Z' | '0'...'9' | '-' => name.push(*c),
+                    _ => return Error(ErrorKind::Custom(1005)),
+                }
+            }
+            do_parse_name(out2, data, name)
+        }
+        // Offsets:
+        192...255 => {
+            let (output, offset) =
+                try_parse!(i,
+                           map!(be_u16, |t_o: u16| (t_o & 0b0011_1111_1111_1111) as usize));
+            let (_, n) = try_parse!(data,
+                                    do_parse!(
+                                        take!(offset) >>
+                                        n: apply!(do_parse_name, data, name) >>
+                                        (n)
+                                    ));
+            Done(output, n)
+        }
+        // Unknown: reserved bits.
+        _ => return Error(ErrorKind::Custom(1001)),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use nom::IResult::Done;
     use super::*;
+    use nom::IResult::Done;
 
     #[test]
     fn parse_str_root_label() {
         let name = "".parse::<Name>().unwrap();
         assert_eq!("", name.label());
-        assert_eq!("", name.name());
+        assert_eq!("", name.to_string());
         assert!(name.is_root());
         assert_eq!(None, name.parent());
     }
@@ -218,8 +231,9 @@ mod tests {
     #[test]
     fn parse_str_simple_label() {
         let name = "raspberry.".parse::<Name>().unwrap();
+        println!("{}, {:?}", name.to_string(), name);
         assert_eq!("raspberry", name.label());
-        assert_eq!("raspberry.", name.name());
+        assert_eq!("raspberry.", name.to_string());
         assert!(!name.is_root());
         assert!(name.parent().unwrap().is_root());
     }
@@ -228,16 +242,16 @@ mod tests {
     fn parse_str_multi_label() {
         let name = "test.example.com.".parse::<Name>().unwrap();
         assert_eq!("test", name.label());
-        assert_eq!("test.example.com.", name.name());
+        assert_eq!("test.example.com.", name.to_string());
         assert!(!name.is_root());
         let parent = name.parent().unwrap();
         assert!(!parent.is_root());
         assert_eq!("example", parent.label());
-        assert_eq!("example.com.", parent.name());
+        assert_eq!("example.com.", parent.to_string());
         let parent = parent.parent().unwrap();
         assert!(!parent.is_root());
         assert_eq!("com", parent.label());
-        assert_eq!("com.", parent.name());
+        assert_eq!("com.", parent.to_string());
         assert!(parent.parent().unwrap().is_root());
     }
 
@@ -252,16 +266,19 @@ mod tests {
         let a = b"12345678901234567890\x01F\x03ISI\x04ARPA\x0012345678\x03FOO\xC0\x14\x00abcd";
 
         assert_eq!(parse_name(&a[20..], &a[..]),
-                   Done(&a[32..], Name { name: String::from("F.ISI.ARPA.") }));
+                   Done(&a[32..],
+                        Name { name: b"\x01F\x03ISI\x04ARPA\x00".to_vec() }));
         assert_eq!(parse_name(&a[22..], &a[..]),
-                   Done(&a[32..], Name { name: String::from("ISI.ARPA.") }));
+                   Done(&a[32..], Name { name: b"\x03ISI\x04ARPA\x00".to_vec() }));
         assert_eq!(parse_name(&a[40..], &a[..]),
-                   Done(&a[46..], Name { name: String::from("FOO.F.ISI.ARPA.") }));
+                   Done(&a[46..],
+                        Name { name: b"\x03FOO\x01F\x03ISI\x04ARPA\x00".to_vec() }));
         // This one is fun: make sure that extra names aren't swallowed or parsed:
         assert_eq!(parse_name(&a[44..], &a[..]),
-                   Done(&b"\x00abcd"[..], Name { name: String::from("F.ISI.ARPA.") }));
+                   Done(&b"\x00abcd"[..],
+                        Name { name: b"\x01F\x03ISI\x04ARPA\x00".to_vec() }));
         assert_eq!(parse_name(&a[46..], &a[..]),
-                   Done(&b"abcd"[..], Name { name: String::from("") }));
+                   Done(&b"abcd"[..], Name { name: b"\x00".to_vec() }));
     }
 
     #[test]
@@ -274,7 +291,8 @@ mod tests {
             }
             s
         };
-        assert_eq!(name.parse::<Name>(), Err(TotalLengthGreaterThan255(name.len())));
+        assert_eq!(name.parse::<Name>(),
+                   Err(TotalLengthGreaterThan255(name.len())));
 
         let name = {
             let mut s = String::from("test");
@@ -284,7 +302,8 @@ mod tests {
             s += ".";
             s
         };
-        assert_eq!(name.parse::<Name>(), Err(LabelLengthGreaterThan63(name.len() - 1)));
+        assert_eq!(name.parse::<Name>(),
+                   Err(LabelLengthGreaterThan63(name.len() - 1)));
 
         let name = "test!.";
         assert_eq!(name.parse::<Name>(), Err(InvalidCharacter('!')));
