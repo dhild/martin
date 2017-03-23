@@ -11,8 +11,11 @@ description = "A Rust library for parsing resource records."
 
 [dependencies]
 clippy = {version = "*", optional = true}
-nom = "^2.0.1"
+nom = "^2.2.0"
 
 [features]
 default = []
 dev = ["clippy"]
+
+[badges]
+travis-ci = { repository = "dhild/martin" }
