@@ -127,7 +127,8 @@ fn parse_response() {
     assert_eq!(msg.id(), 0x60ff);
     assert_eq!(msg.opcode(), Opcode::Query);
     assert_eq!(msg.questions, vec![question]);
-    assert_eq!(msg.answers, vec![a, aaaa, mx1, ns1, ns2, soa, ns3, txt, mx2, ns4, mx3, mx4, mx5]);
+    assert_eq!(msg.answers,
+               vec![a, aaaa, mx1, ns1, ns2, soa, ns3, txt, mx2, ns4, mx3, mx4, mx5]);
     assert_eq!(msg.authorities, vec![]);
     assert_eq!(msg.additionals, vec![opt]);
 }

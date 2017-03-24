@@ -85,11 +85,11 @@ pub fn do_parse_message<'a>(data: &[u8])
 
 #[cfg(test)]
 mod tests {
-    use ::header::{Header, Opcode};
-    use nom::IResult::Done;
-    use ::question::{Question, QType};
-    use ::rr::{Type, Class, ResourceRecord};
     use super::*;
+    use header::{Header, Opcode};
+    use nom::IResult::Done;
+    use question::{Question, QType};
+    use rr::{Type, Class, ResourceRecord};
 
     #[test]
     fn parse_query_1() {
@@ -156,7 +156,7 @@ mod tests {
         let question = Question::new("tile-service.weather.microsoft.com.",
                                      QType::ByType(Type::AAAA),
                                      Class::Internet)
-            .unwrap();
+                .unwrap();
         assert_eq!(do_parse_message(&data[..]),
                    Done(&b""[..],
                         (header, vec![question], Vec::new(), Vec::new(), Vec::new())));
@@ -170,7 +170,7 @@ mod tests {
         let question = Question::new("tile-service.weather.microsoft.com.",
                                      QType::ByType(Type::AAAA),
                                      Class::Internet)
-            .unwrap();
+                .unwrap();
         let ans1 = ResourceRecord::CNAME {
             name: "tile-service.weather.microsoft.com.".parse().unwrap(),
             class: Class::Internet,

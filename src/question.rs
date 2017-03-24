@@ -1,7 +1,8 @@
-use nom::{be_u16, IResult};
-use nom::IResult::*;
+
 use super::names::{Name, parse_name, NameParseError};
 use super::rr::{Class, Type, parse_class, type_from};
+use nom::{be_u16, IResult};
+use nom::IResult::*;
 
 /// A type of query
 #[derive(Debug,Clone,PartialEq,Copy)]
@@ -33,7 +34,7 @@ impl Question {
     }
 }
 
-pub fn parse_question<'a>(i: &'a [u8], data: &'a[u8]) -> IResult<&'a [u8], Question> {
+pub fn parse_question<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Question> {
     let (o1, name) = try_parse!(i, apply!(parse_name, data));
     let (o2, qtype) = try_parse!(o1, map!(be_u16, qtype_from));
     let (output, qclass) = try_parse!(o2, parse_class);

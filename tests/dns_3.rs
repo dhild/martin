@@ -8,7 +8,7 @@ fn parse_query() {
     let question = Question::new("tile-service.weather.microsoft.com.",
                                  QType::ByType(Type::AAAA),
                                  Class::Internet)
-        .unwrap();
+            .unwrap();
     let msg = Message::parse(&data[..]).unwrap();
     assert!(msg.is_query());
     assert_eq!(msg.id(), 0xda64);
@@ -22,7 +22,7 @@ fn parse_response() {
     let question = Question::new("tile-service.weather.microsoft.com.",
                                  QType::ByType(Type::AAAA),
                                  Class::Internet)
-        .unwrap();
+            .unwrap();
     let ans1 = ResourceRecord::CNAME {
         name: "tile-service.weather.microsoft.com.".parse().unwrap(),
         class: Class::Internet,

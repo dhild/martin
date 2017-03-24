@@ -20,10 +20,10 @@ mod question;
 mod message;
 
 pub use header::Header;
+pub use message::{Message, Opcode};
 pub use names::Name;
 pub use question::{Question, QType};
 pub use rr::{Type, Class, ResourceRecord};
-pub use message::{Message, Opcode};
 
 #[cfg(test)]
 mod tests {

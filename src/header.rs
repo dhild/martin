@@ -12,8 +12,8 @@ pub enum Opcode {
     /// Placeholder for values unknown to this library.
     Unknown {
         /// The actual byte value of the (unrecognized) opcode.
-        value: u8
-     }
+        value: u8,
+    },
 }
 
 /// Response types
@@ -231,8 +231,8 @@ do_parse!(
 
 #[cfg(test)]
 mod tests {
-    use nom::IResult::Done;
     use super::*;
+    use nom::IResult::Done;
 
     fn query_1() -> Header {
         Header::query(2, Opcode::Query, true, 1)
@@ -276,9 +276,7 @@ mod tests {
         Header::query(0xda64, Opcode::Query, true, 1)
     }
     fn response_3() -> Header {
-        Header::response(query_3(), true)
-            .answers(2)
-            .authorities(1)
+        Header::response(query_3(), true).answers(2).authorities(1)
     }
 
     #[test]
@@ -297,9 +295,7 @@ mod tests {
         Header::query(0x60ff, Opcode::Query, true, 1).additional(1)
     }
     fn response_4() -> Header {
-        Header::response(query_4(), true)
-            .answers(13)
-            .additional(1)
+        Header::response(query_4(), true).answers(13).additional(1)
     }
 
     #[test]

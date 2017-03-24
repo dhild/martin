@@ -1,11 +1,11 @@
 //! Base types for dealing with resource records.
 
+use super::{Class, Type, class_from, type_from, ResourceRecord};
 use names::{Name, parse_name};
 
 use nom::{be_u8, be_u16, be_u32, be_i32, IResult, ErrorKind};
 use nom::IResult::*;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use super::{Class, Type, class_from, type_from, ResourceRecord};
 
 named!(pub parse_class<&[u8], Class>,
     map!(be_u16, class_from)
@@ -289,10 +289,10 @@ named!(parse_char_string<&[u8], String>,
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use nom::IResult::Done;
     use rr::{Type, Class, ResourceRecord};
     use std::net::Ipv4Addr;
-    use super::*;
 
     #[test]
     fn parse_type_bytes() {
@@ -304,7 +304,8 @@ mod tests {
         assert_eq!(parse_type(&a[..]), Done(&b"abcd"[..], Type::A));
         assert_eq!(parse_type(&aaaa[..]), Done(&b"abcd"[..], Type::AAAA));
         assert_eq!(parse_type(&cname[..]), Done(&b"abcd"[..], Type::CNAME));
-        assert_eq!(parse_type(&md_deprecated[..]), Done(&b"abcd"[..], Type::Unknown { value: 3 }));
+        assert_eq!(parse_type(&md_deprecated[..]),
+                   Done(&b"abcd"[..], Type::Unknown { value: 3 }));
     }
 
     #[test]
@@ -317,19 +318,21 @@ mod tests {
         assert_eq!(parse_class(&a[..]), Done(&b"abcd"[..], Class::Internet));
         assert_eq!(parse_class(&c[..]), Done(&b"abcd"[..], Class::Chaos));
         assert_eq!(parse_class(&d[..]), Done(&b"abcd"[..], Class::Hesoid));
-        assert_eq!(parse_class(&b[..]), Done(&b"abcd"[..], Class::Unknown { value: 2 }));
+        assert_eq!(parse_class(&b[..]),
+                   Done(&b"abcd"[..], Class::Unknown { value: 2 }));
     }
 
     #[test]
     fn parse_a_record() {
         let src = b"\x03FOO\x03BAR\x00\x00\x01\x00\x01\x00\x00\x0e\x10\x00\x04\x7f\x00\x00\x01";
         assert_eq!(parse_record(&src[..], &src[..]),
-                    Done(&b""[..], ResourceRecord::A {
-                        name: "FOO.BAR.".parse().unwrap(),
-                        class: Class::Internet,
-                        ttl: 3600,
-                        addr: Ipv4Addr::new(127, 0, 0, 1)
-                    }));
+                   Done(&b""[..],
+                        ResourceRecord::A {
+                            name: "FOO.BAR.".parse().unwrap(),
+                            class: Class::Internet,
+                            ttl: 3600,
+                            addr: Ipv4Addr::new(127, 0, 0, 1),
+                        }));
     }
 
     #[test]
@@ -338,11 +341,12 @@ mod tests {
         let b = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01";
         let src = [&a[..], &b[..]].concat();
         assert_eq!(parse_record(&src[..], &src[..]),
-                    Done(&b""[..], ResourceRecord::AAAA {
-                        name: "FOO.BAR.".parse().unwrap(),
-                        class: Class::Internet,
-                        ttl: 3600,
-                        addr: "::1".parse().unwrap()
-                    }));
+                   Done(&b""[..],
+                        ResourceRecord::AAAA {
+                            name: "FOO.BAR.".parse().unwrap(),
+                            class: Class::Internet,
+                            ttl: 3600,
+                            addr: "::1".parse().unwrap(),
+                        }));
     }
 }
