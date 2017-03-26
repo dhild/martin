@@ -4,7 +4,7 @@ use super::rr::{Class, Type, parse_class, type_from};
 use nom::{be_u16, IResult};
 use nom::IResult::*;
 
-/// A type of query
+/// The scope of query to execute.
 #[derive(Debug,Clone,PartialEq,Copy)]
 pub enum QType {
     /// The type of record being queried.
@@ -13,7 +13,7 @@ pub enum QType {
     Any,
 }
 
-/// A type that describes a DNS query
+/// Describes a DNS query.
 #[derive(Debug,Clone,PartialEq)]
 pub struct Question {
     qname: Name,

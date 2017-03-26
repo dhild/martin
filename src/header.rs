@@ -1,6 +1,6 @@
 use nom::be_u16;
 
-/// Query operation types
+/// Query operation type
 #[derive(Debug,Clone,Copy,PartialEq)]
 pub enum Opcode {
     /// Standard query
@@ -11,12 +11,12 @@ pub enum Opcode {
     Status,
     /// Placeholder for values unknown to this library.
     Unknown {
-        /// The actual byte value of the (unrecognized) opcode.
+        /// The unrecognized opcode.
         value: u8,
     },
 }
 
-/// Response types
+/// Response status codes
 #[derive(Debug,Clone,Copy,PartialEq)]
 pub enum Rcode {
     /// No error condition.
@@ -32,7 +32,10 @@ pub enum Rcode {
     /// The query was refused for policy reasons.
     Refused,
     /// Placeholder for values unknown to this library.
-    Unknown { value: u8 },
+    Unknown {
+        /// The unrecognized response code.
+        value: u8,
+    },
 }
 
 /// Header for resource record queries and responses
