@@ -1,19 +1,34 @@
 //! Base types for dealing with resource records.
 
-use super::{Class, Type, class_from, type_from, ResourceRecord};
+// nom macro usage generates these warnings for a lot of parser functions in this file.
+#![cfg_attr(feature = "dev", allow(needless_lifetimes))]
+
+use errors::{be_u8, be_u16, be_u32, be_i32, take, ParseError};
 use names::{Name, parse_name};
 
-use nom::{be_u8, be_u16, be_u32, be_i32, IResult, ErrorKind};
+use nom::{IResult, ErrorKind, Needed};
 use nom::IResult::*;
+use rr::{Class, Type, ResourceRecord};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-named!(pub parse_class<&[u8], Class>,
-    map!(be_u16, class_from)
-);
 
-named!(pub parse_type(&[u8]) -> Type,
-    map!(be_u16, type_from)
-);
+pub fn parse_class(i: &[u8]) -> IResult<&[u8], Class, ParseError> {
+    if i.len() < 2 {
+        Incomplete(Needed::Size(2))
+    } else {
+        let x = Class::from(((i[0] as u16) << 8) + i[1] as u16);
+        Done(&i[2..], x)
+    }
+}
+
+pub fn parse_type(i: &[u8]) -> IResult<&[u8], Type, ParseError> {
+    if i.len() < 2 {
+        Incomplete(Needed::Size(2))
+    } else {
+        let x = Type::from(((i[0] as u16) << 8) + i[1] as u16);
+        Done(&i[2..], x)
+    }
+}
 
 //                                 1  1  1  1  1  1
 //   0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
@@ -37,255 +52,221 @@ named!(pub parse_type(&[u8]) -> Type,
 // +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 
 /// Parses a byte stream into a `ResourceRecord`
-pub fn parse_record<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], ResourceRecord> {
-    let (output, name) = try_parse!(i, apply!(parse_name, data));
-    let (output, rtype) = try_parse!(output, parse_type);
+pub fn parse_record<'a>(i: &'a [u8],
+                        data: &'a [u8])
+                        -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (i, name) = try_parse!(i, apply!(parse_name, data));
+    let (i, rtype) = try_parse!(i, parse_type);
     match rtype {
-        Type::A => parse_a(output, name),
-        Type::AAAA => parse_aaaa(output, name),
-        Type::CNAME => parse_cname(output, data, name),
-        Type::SOA => parse_soa(output, data, name),
-        Type::PTR => parse_ptr(output, data, name),
-        Type::OPT => parse_opt(output, name),
-        Type::MX => parse_mx(output, data, name),
-        Type::NS => parse_ns(output, data, name),
-        Type::TXT => parse_txt(output, name),
-        Type::Unknown { value: a } => parse_unknown(output, name, a),
+        Type::A => parse_a(i, name),
+        Type::AAAA => parse_aaaa(i, name),
+        Type::CNAME => parse_cname(i, data, name),
+        Type::SOA => parse_soa(i, data, name),
+        Type::PTR => parse_ptr(i, data, name),
+        Type::OPT => parse_opt(i, &name),
+        Type::MX => parse_mx(i, data, name),
+        Type::NS => parse_ns(i, data, name),
+        Type::TXT => parse_txt(i, name),
+        Type::Unknown { value: a } => parse_unknown(i, name, a),
     }
 }
 
-fn parse_unknown<'a>(i: &'a [u8], name: Name, rtype: u16) -> IResult<&'a [u8], ResourceRecord> {
-    parse_body_unknown(i).map(|args: (Class, i32, &[u8])| {
-        let mut vec = Vec::with_capacity(args.2.len());
-        vec.extend(args.2.iter().cloned());
-        ResourceRecord::Unknown {
-            name: name,
-            rtype: rtype,
-            class: args.0,
-            ttl: args.1,
-            data: vec,
-        }
-    })
+fn parse_parts(i: &[u8]) -> IResult<&[u8], (Class, i32, &[u8]), ParseError> {
+    let (i, class) = try_parse!(i, parse_class);
+    let (i, ttl) = try_parse!(i, be_i32);
+    let (i, length) = try_parse!(i, be_u16);
+    let (out, data) = try_parse!(i, apply!(take, length));
+    Done(out, (class, ttl, data))
 }
 
-named!(parse_body_unknown<&[u8], (Class, i32, &[u8])>,
-    do_parse!(
-        class: parse_class >>
-        ttl: be_i32 >>
-        length: be_u16 >>
-        data: take!( length ) >>
-        ((class, ttl, data))
-    )
-);
-
-fn parse_a<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    parse_body_a(i).map(|args: (Class, i32, Ipv4Addr)| {
-        ResourceRecord::A {
-            name: name,
-            class: args.0,
-            ttl: args.1,
-            addr: args.2,
-        }
-    })
+fn parse_parts_length(i: &[u8],
+                      expected: usize,
+                      t: Type)
+                      -> IResult<&[u8], (Class, i32, &[u8]), ParseError> {
+    let (i, class) = try_parse!(i, parse_class);
+    let (i, ttl) = try_parse!(i, be_i32);
+    let (i, length) = try_parse!(i, be_u16);
+    if expected != length as usize {
+        Error(ErrorKind::Custom(ParseError::InvalidRecordLength(t)))
+    } else {
+        let (i, data) = try_parse!(i, apply!(take, length));
+        Done(i, (class, ttl, data))
+    }
 }
 
-named!(parse_body_a<&[u8], (Class, i32, Ipv4Addr)>,
-    do_parse!(
-        class: parse_class >>
-        ttl: be_i32 >>
-        length: add_return_error!(ErrorKind::Custom(403), tag!( b"\x00\x04" )) >>
-        a: be_u8 >>
-        b: be_u8 >>
-        c: be_u8 >>
-        d: be_u8 >>
-        ((class, ttl, Ipv4Addr::new(a, b, c, d)))
-    )
-);
-
-fn parse_aaaa<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    parse_body_aaaa(i).map(|args: (Class, i32, Ipv6Addr)| {
-        ResourceRecord::AAAA {
-            name: name,
-            class: args.0,
-            ttl: args.1,
-            addr: args.2,
-        }
-    })
+fn parse_unknown<'a>(i: &'a [u8],
+                     name: Name,
+                     rtype: u16)
+                     -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (i, (class, ttl, bytes)) = try_parse!(i, parse_parts);
+    Done(i,
+         ResourceRecord::Unknown {
+             name: name,
+             rtype: rtype,
+             class: class,
+             ttl: ttl,
+             data: bytes.to_vec(),
+         })
 }
 
-named!(parse_body_aaaa<&[u8], (Class, i32, Ipv6Addr)>,
-    do_parse!(
-        class: parse_class >>
-        ttl: be_i32 >>
-        length: add_return_error!(ErrorKind::Custom(405), tag!( "\x00\x10" )) >>
-        a: be_u16 >>
-        b: be_u16 >>
-        c: be_u16 >>
-        d: be_u16 >>
-        e: be_u16 >>
-        f: be_u16 >>
-        g: be_u16 >>
-        h: be_u16 >>
-        ((class, ttl, Ipv6Addr::new(a, b, c, d, e, f, g, h)))
-    )
-);
-
-fn parse_cname<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    do_parse!(i,
-        class: parse_class >>
-        ttl: be_i32 >>
-        rr: length_value!(be_u16,
-            do_parse!(
-                cname: apply!(parse_name, data) >>
-                (ResourceRecord::CNAME {
-                    name: name,
-                    class: class,
-                    ttl: ttl,
-                    cname: cname,
-                })
-            )
-        ) >>
-        (rr)
-    )
+fn parse_a<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (i, (class, ttl, bytes)) = try_parse!(i, apply!(parse_parts_length, 4, Type::A));
+    let addr = Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]);
+    Done(i,
+         ResourceRecord::A {
+             name: name,
+             class: class,
+             ttl: ttl,
+             addr: addr,
+         })
 }
 
-fn parse_ptr<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    do_parse!(i,
-        class: parse_class >>
-        ttl: be_i32 >>
-        rr: length_value!(be_u16,
-            do_parse!(
-                ptrname: apply!(parse_name, data) >>
-                (ResourceRecord::PTR {
-                    name: name,
-                    class: class,
-                    ttl: ttl,
-                    ptrname: ptrname,
-                })
-            )
-        ) >>
-        (rr)
-    )
+fn parse_aaaa<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (i, (class, ttl, bytes)) = try_parse!(i, apply!(parse_parts_length, 16, Type::AAAA));
+    let mut addr: [u8; 16] = Default::default();
+    addr.copy_from_slice(&bytes[..16]);
+    let addr = Ipv6Addr::from(addr);
+    Done(i,
+         ResourceRecord::AAAA {
+             name: name,
+             class: class,
+             ttl: ttl,
+             addr: addr,
+         })
 }
 
-fn parse_ns<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    do_parse!(i,
-        class: parse_class >>
-        ttl: be_i32 >>
-        rr: length_value!(be_u16,
-            do_parse!(
-                ns_name: apply!(parse_name, data) >>
-                (ResourceRecord::NS {
-                    name: name,
-                    class: class,
-                    ttl: ttl,
-                    ns_name: ns_name,
-                })
-            )
-        ) >>
-        (rr)
-    )
+fn parse_cname<'a>(i: &'a [u8],
+                   data: &'a [u8],
+                   name: Name)
+                   -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (out, (class, ttl, bytes)) = try_parse!(i, parse_parts);
+    let (_, cname) = try_parse!(bytes, apply!(parse_name, data));
+    Done(out,
+         ResourceRecord::CNAME {
+             name: name,
+             class: class,
+             ttl: ttl,
+             cname: cname,
+         })
 }
 
-fn parse_soa<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    do_parse!(i,
-        class: parse_class >>
-        ttl: be_i32 >>
-        soa: length_value!(be_u16,
-            do_parse!(
-                mname: apply!(parse_name, data) >>
-                rname: apply!(parse_name, data) >>
-                serial: be_u32 >>
-                refresh: be_u32 >>
-                retry: be_u32 >>
-                expire: be_u32 >>
-                minimum: be_u32 >>
-                (ResourceRecord::SOA {
-                    name: name,
-                    class: class,
-                    ttl: ttl,
-                    mname: mname,
-                    rname: rname,
-                    serial: serial,
-                    refresh: refresh,
-                    retry: retry,
-                    expire: expire,
-                    minimum: minimum,
-                })
-            )
-        ) >>
-        (soa)
-    )
+fn parse_ptr<'a>(i: &'a [u8],
+                 data: &[u8],
+                 name: Name)
+                 -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (i, (class, ttl, bytes)) = try_parse!(i, parse_parts);
+    let (_, ptrname) = try_parse!(bytes, apply!(parse_name, data));
+    Done(i,
+         ResourceRecord::PTR {
+             name: name,
+             class: class,
+             ttl: ttl,
+             ptrname: ptrname,
+         })
 }
 
-fn parse_opt<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
+fn parse_ns<'a>(i: &'a [u8],
+                data: &[u8],
+                name: Name)
+                -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (i, (class, ttl, bytes)) = try_parse!(i, parse_parts);
+    let (_, ns_name) = try_parse!(bytes, apply!(parse_name, data));
+    Done(i,
+         ResourceRecord::NS {
+             name: name,
+             class: class,
+             ttl: ttl,
+             ns_name: ns_name,
+         })
+}
+
+fn parse_soa<'a>(i: &'a [u8],
+                 data: &[u8],
+                 name: Name)
+                 -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (i, (class, ttl, bytes)) = try_parse!(i, parse_parts);
+    let (bytes, mname) = try_parse!(bytes, apply!(parse_name, data));
+    let (bytes, rname) = try_parse!(bytes, apply!(parse_name, data));
+    let (bytes, serial) = try_parse!(bytes, be_u32);
+    let (bytes, refresh) = try_parse!(bytes, be_u32);
+    let (bytes, retry) = try_parse!(bytes, be_u32);
+    let (bytes, expire) = try_parse!(bytes, be_u32);
+    let (_, minimum) = try_parse!(bytes, be_u32);
+    Done(i,
+         ResourceRecord::SOA {
+             name: name,
+             class: class,
+             ttl: ttl,
+             mname: mname,
+             rname: rname,
+             serial: serial,
+             refresh: refresh,
+             retry: retry,
+             expire: expire,
+             minimum: minimum,
+         })
+}
+
+fn parse_opt<'a>(i: &'a [u8], name: &Name) -> IResult<&'a [u8], ResourceRecord, ParseError> {
     if !name.is_root() {
-        return Error(ErrorKind::Custom(410));
+        return Error(ErrorKind::Custom(ParseError::OptNameNotRoot));
     }
-    do_parse!(i,
-        payload_size: be_u16 >>
-        rcode: be_u8 >>
-        version: be_u8 >>
-        flags: be_u16 >>
-        length: be_u16 >>
-        data: take!(length) >>
-        (ResourceRecord::OPT {
-                payload_size: payload_size,
-                extended_rcode: rcode,
-                version: version,
-                dnssec_ok: (flags & 0b1000_0000_0000_0000) != 0,
-                data: {
-                    let mut vec = Vec::with_capacity(length as usize);
-                    vec.extend(data.iter().cloned());
-                    vec
-                },
-            })
-    )
+    let (i, payload_size) = try_parse!(i, be_u16);
+    let (i, rcode) = try_parse!(i, be_u8);
+    let (i, version) = try_parse!(i, be_u8);
+    let (i, flags) = try_parse!(i, be_u16);
+    let (i, length) = try_parse!(i, be_u16);
+    let (i, data) = try_parse!(i, apply!(take, length));
+    Done(i,
+         ResourceRecord::OPT {
+             payload_size: payload_size,
+             extended_rcode: rcode,
+             version: version,
+             dnssec_ok: (flags & 0b1000_0000_0000_0000) != 0,
+             data: data.to_vec(),
+         })
 }
 
-fn parse_mx<'a>(i: &'a [u8], data: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    do_parse!(i,
-        class: parse_class >>
-        ttl: be_i32 >>
-        rr: length_value!(be_u16,
-            do_parse!(
-                preference: be_u16 >>
-                exchange: apply!(parse_name, data) >>
-                (ResourceRecord::MX {
-                    name: name,
-                    class: class,
-                    ttl: ttl,
-                    preference: preference,
-                    exchange: exchange,
-                })
-            )
-        ) >>
-        (rr)
-    )
+fn parse_mx<'a>(i: &'a [u8],
+                data: &[u8],
+                name: Name)
+                -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (i, (class, ttl, bytes)) = try_parse!(i, parse_parts);
+    let (bytes, preference) = try_parse!(bytes, be_u16);
+    let (_, exchange) = try_parse!(bytes, apply!(parse_name, data));
+    Done(i,
+         ResourceRecord::MX {
+             name: name,
+             class: class,
+             ttl: ttl,
+             preference: preference,
+             exchange: exchange,
+         })
 }
 
-fn parse_txt<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord> {
-    do_parse!(i,
-        class: parse_class >>
-        ttl: be_i32 >>
-        length: be_u16 >>
-        bytes: flat_map!( take!( length ), many1!( parse_char_string ) ) >>
-        (ResourceRecord::TXT {
-            name: name,
-            class: class,
-            ttl: ttl,
-            data: bytes,
-        })
-    )
+fn parse_txt<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord, ParseError> {
+    let (i, (class, ttl, mut bytes)) = try_parse!(i, parse_parts);
+    let mut data = Vec::new();
+    while !bytes.is_empty() {
+        let length = bytes[0] as usize;
+        bytes = &bytes[1..];
+        if bytes.len() < length {
+            return Incomplete(Needed::Size(length));
+        }
+        match String::from_utf8(bytes[..length].to_vec()) {
+            Ok(x) => data.push(x),
+            Err(_) => return Error(ErrorKind::Custom(ParseError::TxtInvalidUtf8)),
+        };
+        bytes = &bytes[length..];
+    }
+    Done(i,
+         ResourceRecord::TXT {
+             name: name,
+             class: class,
+             ttl: ttl,
+             data: data,
+         })
 }
-
-named!(parse_char_string<&[u8], String>,
-    do_parse!(
-        length: be_u8 >>
-        s: take_str!( length ) >>
-        (String::from(s))
-    )
-);
 
 #[cfg(test)]
 mod tests {

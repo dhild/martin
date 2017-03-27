@@ -1,8 +1,9 @@
-
-use super::names::{Name, parse_name, NameParseError};
-use super::rr::{Class, Type, parse_class, type_from};
-use nom::{be_u16, IResult};
+use errors::ParseError;
+use names::{Name, parse_name, NameParseError};
+use nom::{IResult, Needed};
 use nom::IResult::*;
+use rr::{Class, Type};
+use std::convert::From;
 
 /// The scope of query to execute.
 #[derive(Debug,Clone,PartialEq,Copy)]
@@ -34,11 +35,14 @@ impl Question {
     }
 }
 
-pub fn parse_question<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Question> {
-    let (o1, name) = try_parse!(i, apply!(parse_name, data));
-    let (o2, qtype) = try_parse!(o1, map!(be_u16, qtype_from));
-    let (output, qclass) = try_parse!(o2, parse_class);
-    Done(output,
+pub fn parse_question<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Question, ParseError> {
+    let (i, name) = try_parse!(i, apply!(parse_name, data));
+    if i.len() < 4 {
+        return Incomplete(Needed::Size(4));
+    }
+    let qtype = QType::from(((i[0] as u16) << 8) + i[1] as u16);
+    let qclass = Class::from(((i[2] as u16) << 8) + i[3] as u16);
+    Done(&i[4..],
          Question {
              qname: name,
              qtype: qtype,
@@ -46,9 +50,11 @@ pub fn parse_question<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Ques
          })
 }
 
-fn qtype_from(bits: u16) -> QType {
-    match type_from(bits) {
-        Type::Unknown { value: 255 } => QType::Any,
-        t @ _ => QType::ByType(t),
+impl From<u16> for QType {
+    fn from(value: u16) -> QType {
+        match Type::from(value) {
+            Type::Unknown { value: 255 } => QType::Any,
+            t => QType::ByType(t),
+        }
     }
 }

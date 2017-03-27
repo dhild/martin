@@ -13,13 +13,15 @@
 #[macro_use]
 extern crate nom;
 
+mod errors;
 mod names;
 mod rr;
 mod header;
 mod question;
 mod message;
+mod parse;
 
-pub use header::{Header, Opcode, Rcode};
+pub use header::{Opcode, Rcode};
 pub use message::Message;
 pub use names::Name;
 pub use question::{Question, QType};

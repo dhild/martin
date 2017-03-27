@@ -1,4 +1,6 @@
-use nom::be_u16;
+use errors::{be_u16, ParseError};
+use nom::IResult;
+use std::convert::From;
 
 /// Query operation type
 #[derive(Debug,Clone,Copy,PartialEq)]
@@ -103,60 +105,6 @@ impl Header {
             additional_count: 0,
         }
     }
-
-    /// Creates a copy of the header, with the `answer_count` field modified.
-    pub fn answers(&self, count: u16) -> Header {
-        Header {
-            id: self.id,
-            qr: self.qr,
-            opcode: self.opcode,
-            authoritative: self.authoritative,
-            truncated: self.truncated,
-            recursion_desired: self.recursion_desired,
-            recursion_available: self.recursion_available,
-            rcode: self.rcode,
-            question_count: self.question_count,
-            answer_count: count,
-            ns_count: self.ns_count,
-            additional_count: self.additional_count,
-        }
-    }
-
-    /// Creates a copy of the header, with the `ns_count` field modified.
-    pub fn authorities(&self, count: u16) -> Header {
-        Header {
-            id: self.id,
-            qr: self.qr,
-            opcode: self.opcode,
-            authoritative: self.authoritative,
-            truncated: self.truncated,
-            recursion_desired: self.recursion_desired,
-            recursion_available: self.recursion_available,
-            rcode: self.rcode,
-            question_count: self.question_count,
-            answer_count: self.answer_count,
-            ns_count: count,
-            additional_count: self.additional_count,
-        }
-    }
-
-    /// Creates a copy of the header, with the `additional_count` field modified.
-    pub fn additional(&self, count: u16) -> Header {
-        Header {
-            id: self.id,
-            qr: self.qr,
-            opcode: self.opcode,
-            authoritative: self.authoritative,
-            truncated: self.truncated,
-            recursion_desired: self.recursion_desired,
-            recursion_available: self.recursion_available,
-            rcode: self.rcode,
-            question_count: self.question_count,
-            answer_count: self.answer_count,
-            ns_count: self.ns_count,
-            additional_count: count,
-        }
-    }
 }
 
 //                                 1  1  1  1  1  1
@@ -175,62 +123,54 @@ impl Header {
 // |                    ARCOUNT                    |
 // +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 
-fn opcode_from(bits: u8) -> Opcode {
-    match bits {
-        0 => Opcode::Query,
-        1 => Opcode::InverseQuery,
-        2 => Opcode::Status,
-        x @ _ => Opcode::Unknown { value: x },
-    }
-}
-fn rcode_from(bits: u8) -> Rcode {
-    match bits {
-        0 => Rcode::NoError,
-        1 => Rcode::FormatError,
-        2 => Rcode::ServerFailure,
-        3 => Rcode::NameError,
-        4 => Rcode::NotImplemented,
-        5 => Rcode::Refused,
-        x @ _ => Rcode::Unknown { value: x },
+impl From<u8> for Opcode {
+    fn from(bits: u8) -> Opcode {
+        match bits {
+            0 => Opcode::Query,
+            1 => Opcode::InverseQuery,
+            2 => Opcode::Status,
+            x => Opcode::Unknown { value: x },
+        }
     }
 }
 
-named!(header_flags<&[u8], (bool, Opcode, bool, bool, bool, bool, Rcode)>,
-bits!(do_parse!(
-     qr:     take_bits!( u8, 1 ) >>
-     opcode: map!(take_bits!( u8, 4 ), opcode_from) >>
-     aa:     take_bits!( u8, 1 ) >>
-     tc:     take_bits!( u8, 1 ) >>
-     rd:     take_bits!( u8, 1 ) >>
-     ra:     take_bits!( u8, 1 ) >>
-     zero:   take_bits!( u8, 3 ) >>
-     rcode:  map!(take_bits!( u8, 4 ), rcode_from) >>
-     (((qr == 1), opcode, (aa == 1), (tc == 1), (rd == 1), (ra == 1), rcode))
-)));
+impl From<u8> for Rcode {
+    fn from(bits: u8) -> Rcode {
+        match bits {
+            0 => Rcode::NoError,
+            1 => Rcode::FormatError,
+            2 => Rcode::ServerFailure,
+            3 => Rcode::NameError,
+            4 => Rcode::NotImplemented,
+            5 => Rcode::Refused,
+            x => Rcode::Unknown { value: x },
+        }
+    }
+}
 
-named!(pub parse_header<&[u8], Header>,
-do_parse!(
-    id:          be_u16 >>
-    flags: header_flags >>
-    qdcount:     be_u16 >>
-    ancount:     be_u16 >>
-    nscount:     be_u16 >>
-    arcount:     be_u16 >>
-    (Header {
+pub fn parse_header(i: &[u8]) -> IResult<&[u8], Header, ParseError> {
+    let (i, id) = try_parse!(i, be_u16);
+    let (i, flags) = try_parse!(i, be_u16);
+    let (i, qdcount) = try_parse!(i, be_u16);
+    let (i, ancount) = try_parse!(i, be_u16);
+    let (i, nscount) = try_parse!(i, be_u16);
+    let (i, arcount) = try_parse!(i, be_u16);
+    let header = Header {
         id: id,
-        qr: flags.0,
-        opcode: flags.1,
-        authoritative: flags.2,
-        truncated: flags.3,
-        recursion_desired: flags.4,
-        recursion_available: flags.5,
-        rcode: flags.6,
+        qr: (flags & 0b1000_0000_0000_0000) != 0,
+        opcode: Opcode::from(((flags & 0b0111_1000_0000_0000) >> 11) as u8),
+        authoritative: (flags & 0b0000_0100_0000_0000) != 0,
+        truncated: (flags & 0b0000_0010_0000_0000) != 0,
+        recursion_desired: (flags & 0b0000_0001_0000_0000) != 0,
+        recursion_available: (flags & 0b0000_0000_1000_0000) != 0,
+        rcode: Rcode::from((flags & 0b0000_0000_0000_1111) as u8),
         question_count: qdcount,
         answer_count: ancount,
         ns_count: nscount,
-        additional_count: arcount
-    })
-));
+        additional_count: arcount,
+    };
+    IResult::Done(i, header)
+}
 
 #[cfg(test)]
 mod tests {
@@ -241,7 +181,9 @@ mod tests {
         Header::query(2, Opcode::Query, true, 1)
     }
     fn response_1() -> Header {
-        Header::response(query_1(), true).answers(1)
+        let mut h = Header::response(query_1(), true);
+        h.answer_count = 1;
+        h
     }
 
     #[test]
@@ -260,7 +202,9 @@ mod tests {
         Header::query(3, Opcode::Query, true, 1)
     }
     fn response_2() -> Header {
-        Header::response(query_2(), true).answers(1)
+        let mut h = Header::response(query_2(), true);
+        h.answer_count = 1;
+        h
     }
 
     #[test]
@@ -279,7 +223,10 @@ mod tests {
         Header::query(0xda64, Opcode::Query, true, 1)
     }
     fn response_3() -> Header {
-        Header::response(query_3(), true).answers(2).authorities(1)
+        let mut h = Header::response(query_3(), true);
+        h.answer_count = 2;
+        h.ns_count = 1;
+        h
     }
 
     #[test]
@@ -295,10 +242,15 @@ mod tests {
     }
 
     fn query_4() -> Header {
-        Header::query(0x60ff, Opcode::Query, true, 1).additional(1)
+        let mut h = Header::query(0x60ff, Opcode::Query, true, 1);
+        h.additional_count = 1;
+        h
     }
     fn response_4() -> Header {
-        Header::response(query_4(), true).answers(13).additional(1)
+        let mut h = Header::response(query_4(), true);
+        h.answer_count = 13;
+        h.additional_count = 1;
+        h
     }
 
     #[test]

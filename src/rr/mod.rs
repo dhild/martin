@@ -4,6 +4,7 @@ use names::Name;
 
 use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::convert::From;
 
 mod parser;
 pub use self::parser::*;
@@ -191,27 +192,31 @@ pub enum ResourceRecord {
     },
 }
 
-fn class_from(value: u16) -> Class {
-    match value {
-        1u16 => Class::Internet,
-        3u16 => Class::Chaos,
-        4u16 => Class::Hesoid,
-        _ => Class::Unknown { value: value },
+impl From<u16> for Class {
+    fn from(value: u16) -> Class {
+        match value {
+            1u16 => Class::Internet,
+            3u16 => Class::Chaos,
+            4u16 => Class::Hesoid,
+            _ => Class::Unknown { value: value },
+        }
     }
 }
 
-pub fn type_from(value: u16) -> Type {
-    match value {
-        1u16 => Type::A,
-        2u16 => Type::NS,
-        5u16 => Type::CNAME,
-        6u16 => Type::SOA,
-        12u16 => Type::PTR,
-        15u16 => Type::MX,
-        16u16 => Type::TXT,
-        28u16 => Type::AAAA,
-        41u16 => Type::OPT,
-        _ => Type::Unknown { value: value },
+impl From<u16> for Type {
+    fn from(value: u16) -> Type {
+        match value {
+            1u16 => Type::A,
+            2u16 => Type::NS,
+            5u16 => Type::CNAME,
+            6u16 => Type::SOA,
+            12u16 => Type::PTR,
+            15u16 => Type::MX,
+            16u16 => Type::TXT,
+            28u16 => Type::AAAA,
+            41u16 => Type::OPT,
+            _ => Type::Unknown { value: value },
+        }
     }
 }
 

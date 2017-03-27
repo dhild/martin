@@ -1,4 +1,5 @@
-use nom::{be_u8, be_u16, IResult, ErrorKind};
+use errors::{ParseError, make_error};
+use nom::{IResult, ErrorKind};
 use nom::IResult::*;
 use std::error;
 use std::fmt;
@@ -35,7 +36,7 @@ impl Name {
     pub fn parent(&self) -> Option<Name> {
         match self.name[0] {
             0 => None,
-            skip @ _ => {
+            skip => {
                 let index: usize = 1 + skip as usize;
                 let p = self.name[index..].to_vec();
                 Some(Name { name: p })
@@ -101,7 +102,6 @@ impl error::Error for NameParseError {
     }
 }
 
-
 impl FromStr for Name {
     type Err = NameParseError;
     fn from_str(s: &str) -> Result<Name, NameParseError> {
@@ -132,7 +132,7 @@ impl FromStr for Name {
                     label_len += 1;
                     name.push(c as u8);
                 }
-                c @ _ => return Err(InvalidCharacter(c)),
+                c => return Err(InvalidCharacter(c)),
             }
         }
         if label_len != 0 {
@@ -149,7 +149,7 @@ impl fmt::Display for Name {
         loop {
             match self.name[pos] {
                 0 => break,
-                length @ _ => {
+                length => {
                     let start = (pos + 1) as usize;
                     let end = start + length as usize;
                     let label = str::from_utf8(&self.name[start..end]).unwrap();
@@ -163,54 +163,70 @@ impl fmt::Display for Name {
 }
 
 /// Parses a byte stream into a `Name`
-pub fn parse_name<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Name> {
-    return_error!(i,
-                  ErrorKind::Custom(300),
-                  map!(apply!(do_parse_name, data, Vec::with_capacity(255)),
-                       |name_data: Vec<u8>| Name { name: name_data }))
+pub fn parse_name<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Name, ParseError> {
+    map!(i,
+         apply!(do_parse_name, data, Vec::with_capacity(255)),
+         |name_data: Vec<u8>| Name { name: name_data })
 }
 
-fn do_parse_name<'a>(i: &'a [u8], data: &'a [u8], mut name: Vec<u8>) -> IResult<&'a [u8], Vec<u8>> {
-    let (out, length) = try_parse!(&i, be_u8);
+fn do_parse_name<'a>(i: &'a [u8],
+                     data: &'a [u8],
+                     mut name: Vec<u8>)
+                     -> IResult<&'a [u8], Vec<u8>, ParseError> {
+    use self::NameParseError::*;
+    use nom::Needed;
+
+    if i.len() < 1 {
+        return Incomplete(Needed::Size(1));
+    }
+    let length = i[0] as usize;
+    let out = &i[1..];
+
     match length {
         0 => {
             name.push(0);
             if name.len() > 255 {
-                return Error(ErrorKind::Custom(1002));
+                Error(ErrorKind::Custom(ParseError::from(TotalLengthGreaterThan255(name.len()))))
+            } else {
+                Done(out, name)
             }
-            return Done(out, name);
         }
         1...63 => {
-            name.push(length);
-            if (name.len() + (length as usize) + 1) > 255 {
+            name.push(length as u8);
+            let newlength = name.len() + length + 1;
+            if newlength > 255 {
                 // Plus the ending '0' makes this > 255.
-                return Error(ErrorKind::Custom(1003));
+                return Error(make_error(TotalLengthGreaterThan255(newlength)));
             }
-            let (out2, bytes) = try_parse!(out, take!(length));
-            for (index, c) in bytes.iter().enumerate() {
+            if out.len() < length {
+                return Incomplete(Needed::Size(length));
+            }
+            for (index, c) in out[..length].iter().enumerate() {
                 match *c as char {
-                    '-' if index == 0 => return Error(ErrorKind::Custom(1004)),
+                    '-' if index == 0 => return Error(make_error(HypenFirstCharacterInLabel)),
                     'a'...'z' | 'A'...'Z' | '0'...'9' | '-' => name.push(*c),
-                    _ => return Error(ErrorKind::Custom(1005)),
+                    c => return Error(make_error(InvalidCharacter(c))),
                 }
             }
-            do_parse_name(out2, data, name)
+            do_parse_name(&out[length..], data, name)
         }
         // Offsets:
         192...255 => {
-            let (output, offset) =
-                try_parse!(i,
-                           map!(be_u16, |t_o: u16| (t_o & 0b0011_1111_1111_1111) as usize));
-            let (_, n) = try_parse!(data,
-                                    do_parse!(
-                                        take!(offset) >>
-                                        n: apply!(do_parse_name, data, name) >>
-                                        (n)
-                                    ));
-            Done(output, n)
+            if i.len() < 2 {
+                return Incomplete(Needed::Size(2));
+            }
+            let offset = (((i[0] & 0b0011_1111) as usize) << 8) + i[1] as usize;
+            if data.len() < offset {
+                return Incomplete(Needed::Size(offset));
+            }
+            let out = &i[2..];
+            match do_parse_name(&data[offset..], data, name) {
+                Done(_, name) => Done(out, name),
+                x => x,
+            }
         }
         // Unknown: reserved bits.
-        _ => return Error(ErrorKind::Custom(1001)),
+        _ => Error(make_error(LabelLengthGreaterThan63(length))),
     }
 }
 
