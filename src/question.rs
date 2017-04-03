@@ -1,9 +1,12 @@
+use byteorder::{BigEndian, WriteBytesExt};
 use errors::ParseError;
-use names::{Name, parse_name, NameParseError};
+use names::{Name, parse_name, write_name, NameParseError};
 use nom::{IResult, Needed};
 use nom::IResult::*;
 use rr::{Class, Type};
 use std::convert::From;
+use std::io;
+use std::io::Write;
 
 /// The scope of query to execute.
 #[derive(Debug,Clone,PartialEq,Copy)]
@@ -57,4 +60,20 @@ impl From<u16> for QType {
             t => QType::ByType(t),
         }
     }
+}
+
+impl From<QType> for u16 {
+    fn from(value: QType) -> u16 {
+        match value {
+            QType::Any => 255,
+            QType::ByType(t) => t.into(),
+        }
+    }
+}
+
+pub fn write_question(question: &Question, writer: &mut Write) -> io::Result<()> {
+    write_name(&question.qname, writer)?;
+    writer.write_u16::<BigEndian>(question.qtype.into())?;
+    writer.write_u16::<BigEndian>(question.qclass.into())?;
+    Ok(())
 }

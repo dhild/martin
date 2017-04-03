@@ -3,6 +3,8 @@ use nom::{IResult, ErrorKind};
 use nom::IResult::*;
 use std::error;
 use std::fmt;
+use std::io;
+use std::io::Write;
 use std::str::FromStr;
 
 /// Representation of a domain name
@@ -53,11 +55,17 @@ impl Name {
 /// An error returned when parsing a domain name
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum NameParseError {
+    /// Name length cannot exceed 255
     TotalLengthGreaterThan255(usize),
+    /// Label length cannot exceed 63
     LabelLengthGreaterThan63(usize),
+    /// Valid characters are 'a-z', 'A-z', '0-9', and '-'
     InvalidCharacter(char),
+    /// '-' cannot be the first character in a label
     HypenFirstCharacterInLabel,
+    /// The last label of a name must be the root label '.'
     NameMustEndInRootLabel,
+    /// An empty label is not allowed except for the root label
     EmptyNonRootLabel,
 }
 
@@ -228,6 +236,11 @@ fn do_parse_name<'a>(i: &'a [u8],
         // Unknown: reserved bits.
         _ => Error(make_error(LabelLengthGreaterThan63(length))),
     }
+}
+
+pub fn write_name(name: &Name, writer: &mut Write) -> io::Result<()> {
+    // TODO: Add name compression
+    writer.write_all(&name.name)
 }
 
 #[cfg(test)]

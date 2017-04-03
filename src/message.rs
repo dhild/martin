@@ -1,10 +1,12 @@
 use errors::ParseError;
-use header::{Header, parse_header};
-use header::{Opcode, Rcode};
+use header::{Header, parse_header, write_header, Opcode, Rcode};
 use nom::{ErrorKind, IResult};
 use nom::IResult::*;
-use question::{Question, parse_question};
-use rr::{ResourceRecord, parse_record};
+use question::{Question, parse_question, write_question};
+use rr::{ResourceRecord, parse_record, write_rr};
+use std::fmt;
+use std::io;
+use std::io::Cursor;
 
 /// Describes a DNS query or response.
 #[warn(missing_debug_implementations)]
@@ -107,6 +109,99 @@ impl Message {
     pub fn push_additional(&mut self, additional: ResourceRecord) {
         self.header.additional_count += 1;
         self.additionals.push(additional);
+    }
+
+    /// Writes a `Message` into the given cursor.
+    pub fn write<T>(&self, cursor: &mut Cursor<T>) -> Result<(), WriteError>
+        where Cursor<T>: io::Write
+    {
+        let start = cursor.position();
+        write_header(&self.header, cursor)?;
+
+        let truncated = |cursor: &mut Cursor<T>| -> Result<(), WriteError> {
+            let mut h2 = self.header.clone();
+            h2.truncated = true;
+            let end = cursor.position();
+            cursor.set_position(start);
+            write_header(&h2, cursor)?;
+            cursor.set_position(end);
+            Err(WriteError::Truncated)
+        };
+
+        for q in self.questions.iter() {
+            if let Err(e) = write_question(&q, cursor) {
+                if e.kind() == io::ErrorKind::WriteZero {
+                    return truncated(cursor);
+                }
+                return Err(e.into());
+            }
+        }
+
+        let iter = self.answers.iter();
+        let iter = iter.chain(self.authorities.iter());
+        let iter = iter.chain(self.additionals.iter());
+
+        for rr in iter {
+            if let Err(e) = write_rr(&rr, cursor) {
+                if e.kind() == io::ErrorKind::WriteZero {
+                    return truncated(cursor);
+                }
+                return Err(e.into());
+            }
+        }
+        Ok(())
+    }
+}
+
+#[test]
+#[should_panic]
+fn write_bytes_overflow() {
+    use std::io::Write;
+    let mut data: [u8; 5] = [0; 5];
+    let mut cursor = Cursor::new(&mut data[..]);
+    cursor.write_all(&[1, 2, 3]).unwrap();
+    cursor.write_all(&[4, 5, 6]).unwrap();
+}
+
+/// Indicates that there was a problem while writing
+#[derive(Debug)]
+pub enum WriteError {
+    /// Indicates that the `Message` needed to be truncated to fit in the allocated area.
+    /// In some cases, the message can still be useful.
+    /// The ouput's header will have been written with the `truncated` bit set.
+    Truncated,
+    /// Indicates that there was an IO error while writing.
+    IOError(io::Error),
+}
+
+impl fmt::Display for WriteError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            WriteError::Truncated => write!(f, "Written, but truncated to fit"),
+            WriteError::IOError(ref e) => write!(f, "IO Error: {}", e),
+        }
+    }
+}
+
+impl From<io::Error> for WriteError {
+    fn from(e: io::Error) -> WriteError {
+        WriteError::IOError(e)
+    }
+}
+
+impl ::std::error::Error for WriteError {
+    fn description(&self) -> &str {
+        match *self {
+            WriteError::Truncated => "Output could not fit in given space.",
+            WriteError::IOError(ref e) => e.description(),
+        }
+    }
+
+    fn cause(&self) -> Option<&::std::error::Error> {
+        match *self {
+            WriteError::Truncated => None,
+            WriteError::IOError(ref e) => Some(e),
+        }
     }
 }
 

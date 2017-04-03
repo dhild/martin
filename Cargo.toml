@@ -7,18 +7,25 @@ homepage = "https://github.com/dhild/martin.git"
 license = "MIT"
 readme = "README.md"
 documentation = "http://dhild.github.io/martin/"
-description = "A Rust library for parsing resource records."
+description = "A Rust library for parsing & serializing DNS messages."
+keywords = ["dns"]
+categories = []
 
 [dependencies]
 clippy = {version = "*", optional = true}
 nom = "^2.2.0"
+byteorder = "1"
 
 [dev-dependencies]
-clap = "^2.22.1"
+log4rs = "^0.6"
+getopts = "^0.2"
+log = "^0.3"
+
+[target.'cfg(windows)'.dev-dependencies]
+winreg = "^0.4"
 
 [features]
 default = []
-dev = ["clippy"]
 
 [badges]
 travis-ci = { repository = "dhild/martin" }

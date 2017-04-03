@@ -10,12 +10,15 @@ use std::fmt;
 /// Errors that may occur while parsing
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum ParseError {
+    /// An insufficient number of bytes were provided
     Incomplete,
-    /// Indicates that an error occured while parsing a name
+    /// An error occured while parsing a name
     NameError(NameParseError),
-    /// Indicates that a resource record length field is invalid
+    /// A resource record length field is invalid
     InvalidRecordLength(Type),
+    /// An OPT record has a name field other than the root name
     OptNameNotRoot,
+    /// A TXT record has an invalid character string
     TxtInvalidUtf8,
 }
 

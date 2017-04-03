@@ -1,6 +1,9 @@
+use byteorder::{BigEndian, WriteBytesExt};
 use errors::{be_u16, ParseError};
 use nom::IResult;
 use std::convert::From;
+use std::io;
+use std::io::Write;
 
 /// Query operation type
 #[derive(Debug,Clone,Copy,PartialEq)]
@@ -105,6 +108,38 @@ impl Header {
             additional_count: 0,
         }
     }
+
+    fn flags_to_u16(&self) -> u16 {
+        let opcode: u8 = self.opcode.into();
+        let rcode: u8 = self.rcode.into();
+        let mut res = (rcode as u16) | ((opcode as u16) << 11);
+        if self.qr {
+            res |= 0b1000_0000_0000_0000;
+        }
+        if self.authoritative {
+            res |= 0b0000_0100_0000_0000;
+        }
+        if self.truncated {
+            res |= 0b0000_0010_0000_0000;
+        }
+        if self.recursion_desired {
+            res |= 0b0000_0001_0000_0000;
+        }
+        if self.recursion_available {
+            res |= 0b0000_0000_1000_0000;
+        }
+        res
+    }
+}
+
+pub fn write_header(header: &Header, writer: &mut Write) -> io::Result<()> {
+    writer.write_u16::<BigEndian>(header.id)?;
+    writer.write_u16::<BigEndian>(header.flags_to_u16())?;
+    writer.write_u16::<BigEndian>(header.question_count)?;
+    writer.write_u16::<BigEndian>(header.answer_count)?;
+    writer.write_u16::<BigEndian>(header.ns_count)?;
+    writer.write_u16::<BigEndian>(header.additional_count)?;
+    Ok(())
 }
 
 //                                 1  1  1  1  1  1
@@ -134,6 +169,17 @@ impl From<u8> for Opcode {
     }
 }
 
+impl From<Opcode> for u8 {
+    fn from(opcode: Opcode) -> u8 {
+        match opcode {
+            Opcode::Query => 0,
+            Opcode::InverseQuery => 1,
+            Opcode::Status => 2,
+            Opcode::Unknown { value: x } => x,
+        }
+    }
+}
+
 impl From<u8> for Rcode {
     fn from(bits: u8) -> Rcode {
         match bits {
@@ -144,6 +190,20 @@ impl From<u8> for Rcode {
             4 => Rcode::NotImplemented,
             5 => Rcode::Refused,
             x => Rcode::Unknown { value: x },
+        }
+    }
+}
+
+impl From<Rcode> for u8 {
+    fn from(rcode: Rcode) -> u8 {
+        match rcode {
+            Rcode::NoError => 0,
+            Rcode::FormatError => 1,
+            Rcode::ServerFailure => 2,
+            Rcode::NameError => 3,
+            Rcode::NotImplemented => 4,
+            Rcode::Refused => 5,
+            Rcode::Unknown { value: x } => x,
         }
     }
 }

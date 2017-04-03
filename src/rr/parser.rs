@@ -63,7 +63,7 @@ pub fn parse_record<'a>(i: &'a [u8],
         Type::CNAME => parse_cname(i, data, name),
         Type::SOA => parse_soa(i, data, name),
         Type::PTR => parse_ptr(i, data, name),
-        Type::OPT => parse_opt(i, &name),
+        Type::OPT => parse_opt(i, name),
         Type::MX => parse_mx(i, data, name),
         Type::NS => parse_ns(i, data, name),
         Type::TXT => parse_txt(i, name),
@@ -102,7 +102,7 @@ fn parse_unknown<'a>(i: &'a [u8],
     Done(i,
          ResourceRecord::Unknown {
              name: name,
-             rtype: rtype,
+             rtype: rtype.into(),
              class: class,
              ttl: ttl,
              data: bytes.to_vec(),
@@ -207,7 +207,7 @@ fn parse_soa<'a>(i: &'a [u8],
          })
 }
 
-fn parse_opt<'a>(i: &'a [u8], name: &Name) -> IResult<&'a [u8], ResourceRecord, ParseError> {
+fn parse_opt<'a>(i: &'a [u8], name: Name) -> IResult<&'a [u8], ResourceRecord, ParseError> {
     if !name.is_root() {
         return Error(ErrorKind::Custom(ParseError::OptNameNotRoot));
     }

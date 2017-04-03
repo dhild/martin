@@ -6,12 +6,13 @@
         unsafe_code,
         unstable_features,
         unused_import_braces, unused_qualifications)]
-#![cfg_attr(feature = "dev", allow(unstable_features))]
-#![cfg_attr(feature = "dev", feature(plugin))]
-#![cfg_attr(feature = "dev", plugin(clippy))]
+#![cfg_attr(feature = "clippy", feature(plugin))]
+#![cfg_attr(feature = "clippy", plugin(clippy))]
 
 #[macro_use]
 extern crate nom;
+
+extern crate byteorder;
 
 mod errors;
 mod names;
@@ -21,9 +22,10 @@ mod question;
 mod message;
 mod parse;
 
+pub use errors::ParseError;
 pub use header::{Opcode, Rcode};
-pub use message::Message;
-pub use names::Name;
+pub use message::{Message, WriteError};
+pub use names::{Name, NameParseError};
 pub use question::{Question, QType};
 pub use rr::{Type, Class, ResourceRecord};
 

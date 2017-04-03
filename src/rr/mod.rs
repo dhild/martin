@@ -1,13 +1,16 @@
 //! Base types for dealing with resource records.
 
 use names::Name;
+use std::convert::From;
 
 use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::convert::From;
 
 mod parser;
+mod writer;
 pub use self::parser::*;
+
+pub use self::writer::*;
 
 /// A `Type` field indicates the structure and content of a resource record.
 #[derive(Debug,PartialEq,Clone,Copy)]
@@ -182,7 +185,7 @@ pub enum ResourceRecord {
         /// The `Name` this record applies to.
         name: Name,
         /// The type code for this unknown data.
-        rtype: u16,
+        rtype: Type,
         /// The `Class` this record applies to.
         class: Class,
         /// The "time to live" for this data, in seconds.
@@ -203,6 +206,17 @@ impl From<u16> for Class {
     }
 }
 
+impl From<Class> for u16 {
+    fn from(value: Class) -> u16 {
+        match value {
+            Class::Internet => 1u16,
+            Class::Chaos => 3u16,
+            Class::Hesoid => 4u16,
+            Class::Unknown { value: x } => x,
+        }
+    }
+}
+
 impl From<u16> for Type {
     fn from(value: u16) -> Type {
         match value {
@@ -216,6 +230,23 @@ impl From<u16> for Type {
             28u16 => Type::AAAA,
             41u16 => Type::OPT,
             _ => Type::Unknown { value: value },
+        }
+    }
+}
+
+impl From<Type> for u16 {
+    fn from(value: Type) -> u16 {
+        match value {
+            Type::A => 1u16,
+            Type::NS => 2u16,
+            Type::CNAME => 5u16,
+            Type::SOA => 6u16,
+            Type::PTR => 12u16,
+            Type::MX => 15u16,
+            Type::TXT => 16u16,
+            Type::AAAA => 28u16,
+            Type::OPT => 41u16,
+            Type::Unknown { value: x } => x,
         }
     }
 }
