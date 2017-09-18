@@ -1,6 +1,6 @@
-extern crate martin;
+extern crate martin_rr;
 
-use martin::*;
+use martin_rr::*;
 
 #[test]
 fn parse_query() {

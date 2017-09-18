@@ -1,0 +1,36 @@
+[package]
+name = "martin_rr"
+description = "Handles the binary data model for resource records"
+version = "0.2.0"
+authors = ["D. Ryan Hild <d.ryan.hild@gmail.com>"]
+repository = "https://github.com/dhild/martin"
+homepage = "https://github.com/dhild/martin"
+license = "MIT"
+readme = "../../README.md"
+documentation = "http://dhild.github.io/martin/"
+keywords = ["dns"]
+categories = []
+workspace = "../.."
+
+[lib]
+name = "martin_rr"
+path = "src/lib.rs"
+
+[dependencies]
+clippy = {version = "*", optional = true}
+nom = "3.2.0"
+byteorder = "1.1.0"
+
+[dev-dependencies]
+log4rs = "^0.7.0"
+getopts = "^0.2"
+log = "^0.3"
+
+[target.'cfg(windows)'.dev-dependencies]
+winreg = "^0.4"
+
+[features]
+default = []
+
+[badges]
+travis-ci = { repository = "dhild/martin" }

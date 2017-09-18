@@ -12,7 +12,7 @@ use std::str::FromStr;
 /// Domain names consist of one or more labels, broken up by the character '.'.
 ///
 /// ```
-/// # use martin::Name;
+/// # use martin_rr::Name;
 /// let name: Name = "test.example.com.".parse().unwrap();
 /// assert_eq!("test", name.label());
 /// assert_eq!("test.example.com.", name.to_string());

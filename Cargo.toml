@@ -1,31 +1,8 @@
-[package]
-name = "martin"
-version = "0.1.0"
-authors = ["D. Ryan Hild <d.ryan.hild@gmail.com>"]
-repository = "https://github.com/dhild/martin.git"
-homepage = "https://github.com/dhild/martin.git"
-license = "MIT"
-readme = "README.md"
-documentation = "http://dhild.github.io/martin/"
-description = "A Rust library for parsing & serializing DNS messages."
-keywords = ["dns"]
-categories = []
-
-[dependencies]
-clippy = {version = "*", optional = true}
-nom = "^2.2.0"
-byteorder = "1"
-
-[dev-dependencies]
-log4rs = "^0.6"
-getopts = "^0.2"
-log = "^0.3"
-
-[target.'cfg(windows)'.dev-dependencies]
-winreg = "^0.4"
-
-[features]
-default = []
+[workspace]
+members = [
+  "src/rr",
+    "src/server"
+]
 
 [badges]
 travis-ci = { repository = "dhild/martin" }
