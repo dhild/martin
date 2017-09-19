@@ -19,11 +19,11 @@ path = "src/main.rs"
 [dependencies]
 clippy = {version = "*", optional = true}
 martin_rr = { path = "../rr", version = "0.2.0" }
+log4rs = "^0.7.0"
+log = "^0.3.8"
 
 [dev-dependencies]
-log4rs = "^0.7.0"
 getopts = "^0.2"
-log = "^0.3.8"
 
 [features]
 default = []

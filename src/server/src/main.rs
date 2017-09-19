@@ -1,7 +1,6 @@
 //! A DNS server
 #![doc(html_root_url = "https://dhild.github.io/martin/")]
-#![deny(missing_docs,
-        missing_debug_implementations, missing_copy_implementations,
+#![deny(missing_debug_implementations, missing_copy_implementations,
         trivial_casts,
         unsafe_code,
         unstable_features,
