@@ -201,7 +201,7 @@ impl From<u16> for Class {
             1u16 => Class::Internet,
             3u16 => Class::Chaos,
             4u16 => Class::Hesoid,
-            _ => Class::Unknown { value: value },
+            _ => Class::Unknown { value },
         }
     }
 }
@@ -229,7 +229,7 @@ impl From<u16> for Type {
             16u16 => Type::TXT,
             28u16 => Type::AAAA,
             41u16 => Type::OPT,
-            _ => Type::Unknown { value: value },
+            _ => Type::Unknown { value },
         }
     }
 }

@@ -1,18 +1,20 @@
-use errors::ParseError;
-use header::{Header, parse_header, write_header, Opcode, Rcode};
-use nom::{ErrorKind, IResult};
-use nom::IResult::*;
-use question::{Question, parse_question, write_question};
-use rr::{ResourceRecord, parse_record, write_rr};
-use std::fmt;
-use std::io;
-use std::io::Cursor;
+use std::fmt::{Display, Formatter};
+use crate::header::{Header, Opcode, Rcode};
+use crate::question::{QType, Question};
+use crate::rr::{Class, ResourceRecord, Type};
+use std::io::{Cursor, Write};
+use nom::bytes::complete::{tag, take_while_m_n};
+use nom::combinator::{eof, fail};
+use nom::IResult;
+use nom::multi::{count, length_data};
+use nom::number::complete::{be_u128, be_u16, be_u32, be_u8};
+use nom::sequence::tuple;
+use crate::names::{Name};
 
 /// Describes a DNS query or response.
-#[warn(missing_debug_implementations)]
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Message {
-    header: Header,
+    pub header: Header,
     /// The question(s) for the name server
     pub questions: Vec<Question>,
     /// Resource records answering the question
@@ -24,16 +26,6 @@ pub struct Message {
 }
 
 impl Message {
-    /// Parses the given message data into a `Message` object
-    pub fn parse(data: &[u8]) -> Result<Message, ParseError> {
-        use nom::IResult::*;
-        match do_parse_message(data) {
-            Done(_, m) => Ok(m),
-            Error(ErrorKind::Custom(e)) => Err(e),
-            _ => Err(ParseError::Incomplete),
-        }
-    }
-
     /// A 16 bit identifier assigned by the program.
     pub fn id(&self) -> u16 {
         self.header.id
@@ -72,10 +64,10 @@ impl Message {
     }
 
     /// Creates a `Message` for sending a standard query
-    pub fn query(id: u16, recursion_desired: bool, questions: &[Question]) -> Message {
+    pub fn query(id: u16, recursion_desired: bool, question: Question) -> Message {
         Message {
-            header: Header::query(id, Opcode::Query, recursion_desired, questions.len() as u16),
-            questions: questions.to_vec(),
+            header: Header::query(id, Opcode::Query, recursion_desired, 1),
+            questions: vec![question],
             answers: Vec::new(),
             authorities: Vec::new(),
             additionals: Vec::new(),
@@ -92,424 +84,208 @@ impl Message {
             additionals: Vec::new(),
         }
     }
+}
 
-    /// Adds an answer record to this `Message`
-    pub fn push_answer(&mut self, ans: ResourceRecord) {
-        self.header.answer_count += 1;
-        self.answers.push(ans);
-    }
-
-    /// Adds an authority record to this `Message`
-    pub fn push_authority(&mut self, auth: ResourceRecord) {
-        self.header.ns_count += 1;
-        self.authorities.push(auth);
-    }
-
-    /// Adds an additional record to this `Message`
-    pub fn push_additional(&mut self, additional: ResourceRecord) {
-        self.header.additional_count += 1;
-        self.additionals.push(additional);
-    }
-
-    /// Writes a `Message` into the given cursor.
-    pub fn write<T>(&self, cursor: &mut Cursor<T>) -> Result<(), WriteError>
-        where Cursor<T>: io::Write
-    {
-        let start = cursor.position();
-        write_header(&self.header, cursor)?;
-
-        let truncated = |cursor: &mut Cursor<T>| -> Result<(), WriteError> {
-            let mut h2 = self.header.clone();
-            h2.truncated = true;
-            let end = cursor.position();
-            cursor.set_position(start);
-            write_header(&h2, cursor)?;
-            cursor.set_position(end);
-            Err(WriteError::Truncated)
-        };
-
+impl Display for Message {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Message {} ({} {}) {} {} {} {} {:?}\n",
+               self.id(),
+               if self.is_query() { "Q" } else { "R" },
+               match self.opcode() {
+                   Opcode::Query => "Q",
+                   Opcode::InverseQuery => "I",
+                   Opcode::Status => "S",
+                   Opcode::Unknown { .. } => " ",
+               },
+               if self.authoritative() { "A" } else { " " },
+               if self.truncated() { "T" } else { " " },
+               if self.recursion_desired() { "r" } else { " " },
+               if self.recursion_available() { "R" } else { " " },
+               self.rcode(),
+        )?;
         for q in self.questions.iter() {
-            if let Err(e) = write_question(&q, cursor) {
-                if e.kind() == io::ErrorKind::WriteZero {
-                    return truncated(cursor);
-                }
-                return Err(e.into());
-            }
+            write!(f, "    Question ({:?}): {}\n", q.qtype, q.qname)?;
         }
-
-        let iter = self.answers.iter();
-        let iter = iter.chain(self.authorities.iter());
-        let iter = iter.chain(self.additionals.iter());
-
-        for rr in iter {
-            if let Err(e) = write_rr(&rr, cursor) {
-                if e.kind() == io::ErrorKind::WriteZero {
-                    return truncated(cursor);
-                }
-                return Err(e.into());
-            }
+        for rr in self.authorities.iter() {
+            write!(f, "    Authority: {rr}\n")?;
+        }
+        for rr in self.answers.iter() {
+            write!(f, "    Answer: {rr}\n")?;
+        }
+        for rr in self.additionals.iter() {
+            write!(f, "    Additional: {rr}\n")?;
         }
         Ok(())
     }
 }
 
-#[test]
-#[should_panic]
-fn write_bytes_overflow() {
-    use std::io::Write;
-    let mut data: [u8; 5] = [0; 5];
-    let mut cursor = Cursor::new(&mut data[..]);
-    cursor.write_all(&[1, 2, 3]).unwrap();
-    cursor.write_all(&[4, 5, 6]).unwrap();
-}
+impl Message {
+    /// Encodes a `Message` into a stream of bytes.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut cursor = Cursor::new(Vec::new());
+        self.write_to(&mut cursor).unwrap();
+        cursor.into_inner()
+    }
 
-/// Indicates that there was a problem while writing
-#[derive(Debug)]
-pub enum WriteError {
-    /// Indicates that the `Message` needed to be truncated to fit in the allocated area.
-    /// In some cases, the message can still be useful.
-    /// The ouput's header will have been written with the `truncated` bit set.
-    Truncated,
-    /// Indicates that there was an IO error while writing.
-    IOError(io::Error),
-}
+    /// Writes a `Message` into a stream of bytes.
+    pub fn write_to<T>(&self, cursor: &mut Cursor<T>) -> std::io::Result<()> where Cursor<T>: Write {
+        self.header.write_to(cursor).unwrap();
 
-impl fmt::Display for WriteError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            WriteError::Truncated => write!(f, "Written, but truncated to fit"),
-            WriteError::IOError(ref e) => write!(f, "IO Error: {}", e),
+        for q in self.questions.iter() {
+            q.write_to(cursor)?;
         }
-    }
-}
-
-impl From<io::Error> for WriteError {
-    fn from(e: io::Error) -> WriteError {
-        WriteError::IOError(e)
-    }
-}
-
-impl ::std::error::Error for WriteError {
-    fn description(&self) -> &str {
-        match *self {
-            WriteError::Truncated => "Output could not fit in given space.",
-            WriteError::IOError(ref e) => e.description(),
+        for rr in self.answers.iter().chain(self.authorities.iter()).chain(self.additionals.iter()) {
+            rr.write_to(cursor)?;
         }
+        Ok(())
     }
 
-    fn cause(&self) -> Option<&::std::error::Error> {
-        match *self {
-            WriteError::Truncated => None,
-            WriteError::IOError(ref e) => Some(e),
+    pub fn decode(buf: &[u8]) -> Result<Message, nom::Err<nom::error::Error<Vec<u8>>>> {
+        let parser = |i| -> IResult<&[u8], Message> {
+            let (i, msg) = parse_message(i)?;
+            let (i, _) = eof(i)?;
+            Ok((i, msg))
+        };
+        parser(buf).map(|(_, msg)| msg).map_err(|e| e.to_owned())
+    }
+}
+
+fn parse_message(buf: &[u8]) -> IResult<&[u8], Message> {
+    let (i, header) = parse_header(buf)?;
+    let (i, questions) = count(parse_question(buf), header.question_count as usize)(i)?;
+    let (i, answers) = count(parse_rr(buf), header.answer_count as usize)(i)?;
+    let (i, authorities) = count(parse_rr(buf), header.ns_count as usize)(i)?;
+    let (i, additionals) = count(parse_rr(buf), header.additional_count as usize)(i)?;
+    Ok((i, Message {
+        header,
+        questions,
+        answers,
+        authorities,
+        additionals,
+    }))
+}
+
+fn parse_header(i: &[u8]) -> IResult<&[u8], Header> {
+    let (i, id) = be_u16(i)?;
+    let (i, flags) = be_u16(i)?;
+    let (i, question_count) = be_u16(i)?;
+    let (i, answer_count) = be_u16(i)?;
+    let (i, ns_count) = be_u16(i)?;
+    let (i, additional_count) = be_u16(i)?;
+
+    Ok((i, Header {
+        id,
+        qr: (flags & 0b1000_0000_0000_0000) != 0,
+        opcode: Opcode::from(((flags & 0b0111_1000_0000_0000) >> 11) as u8),
+        authoritative: (flags & 0b0000_0100_0000_0000) != 0,
+        truncated: (flags & 0b0000_0010_0000_0000) != 0,
+        recursion_desired: (flags & 0b0000_0001_0000_0000) != 0,
+        recursion_available: (flags & 0b0000_0000_1000_0000) != 0,
+        rcode: Rcode::from((flags & 0b0000_0000_0000_1111) as u8),
+        question_count,
+        answer_count,
+        ns_count,
+        additional_count,
+    }))
+}
+
+fn parse_question<'a>(data: &'a [u8]) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Question> {
+    |i| -> IResult<&[u8], Question> {
+        let (i, qname) = parse_name(data)(i)?;
+        let (i, qtype) = be_u16(i)?;
+        let (i, qclass) = be_u16(i)?;
+        Ok((i, Question { qname, qtype: QType::from(qtype), qclass: Class::from(qclass) }))
+    }
+}
+
+fn parse_name<'a>(data: &'a [u8]) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Name> {
+    |i| -> IResult<&[u8], Name> {
+        let (i, length) = be_u8(i)?;
+        if length == 0 {
+            return Ok((i, Name { name: vec![0] }));
         }
-    }
-}
-
-fn do_parse_message(data: &[u8]) -> IResult<&[u8], Message, ParseError> {
-    let (i, header) = try_parse!(data, parse_header);
-    let (i, questions) = try_parse!(i, apply!(parse_questions, data, header.question_count));
-    if questions.len() != header.question_count as usize {
-        return Done(i,
-                    Message {
-                        header: header,
-                        questions: questions,
-                        answers: Vec::new(),
-                        authorities: Vec::new(),
-                        additionals: Vec::new(),
-                    });
-    }
-    // No count checks - failures from an incomplete will fall through all three attempts.
-    let (i, answers) = try_parse!(i, apply!(parse_records, data, header.answer_count));
-    let (i, authorities) = try_parse!(i, apply!(parse_records, data, header.ns_count));
-    let (i, additionals) = try_parse!(i, apply!(parse_records, data, header.additional_count));
-    Done(i,
-         Message {
-             header: header,
-             questions: questions,
-             answers: answers,
-             authorities: authorities,
-             additionals: additionals,
-         })
-}
-
-fn parse_questions<'a>(i: &'a [u8],
-                       data: &'a [u8],
-                       count: u16)
-                       -> IResult<&'a [u8], Vec<Question>, ParseError> {
-    let mut questions = Vec::with_capacity(count as usize);
-    let mut input = i;
-    for _ in 0..count {
-        match parse_question(input, data) {
-            Done(i, q) => {
-                questions.push(q);
-                input = i;
+        match length & 0xC0 {
+            0 => {
+                let (i, first) = take_while_m_n(1, length as usize, |item: u8| item.is_ascii_alphanumeric())(i)?;
+                let rem = length as usize - first.len();
+                let (i, second) = take_while_m_n(rem, rem, |item: u8| item.is_ascii_alphanumeric() || item as char == '-')(i)?;
+                let (i, next) = parse_name(data)(i)?;
+                let mut name = Vec::with_capacity(1 + length as usize + next.name.len());
+                name.push(length);
+                name.extend_from_slice(first);
+                name.extend_from_slice(second);
+                name.extend(next.name);
+                Ok((i, Name { name }))
             }
-            Incomplete(_) => return Done(input, questions),
-            Error(e) => return Error(e),
-        }
-    }
-    Done(input, questions)
-}
-
-fn parse_records<'a>(i: &'a [u8],
-                     data: &'a [u8],
-                     count: u16)
-                     -> IResult<&'a [u8], Vec<ResourceRecord>, ParseError> {
-    let mut records = Vec::with_capacity(count as usize);
-    let mut input = i;
-    for _ in 0..count {
-        match parse_record(input, data) {
-            Done(i, rr) => {
-                records.push(rr);
-                input = i;
+            0xC0 => {
+                let (i, offset_low) = be_u8(i)?;
+                let offset = (length as usize & 0x3F) << 8 | offset_low as usize;
+                // Refuse to look ahead in the data; compression is expected to only work in reverse
+                if offset > (data.len() - i.len()) {
+                    fail(i)
+                } else {
+                    let (_, name) = parse_name(data)(&data[offset..])?;
+                    Ok((i, name))
+                }
             }
-            Incomplete(_) => return Done(input, records),
-            Error(e) => return Error(e),
+            // Catch-all because the match arms complain otherwise
+            // Technically, they are valid u8 values; but they aren't valid outputs of the AND operation.
+            0x40 | 0x80 | _ => {
+                // Reserved bits
+                fail(i)
+            }
         }
     }
-    Done(input, records)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nom::IResult::Done;
-    use question::{Question, QType};
-    use rr::{Type, Class, ResourceRecord};
+fn parse_class(i: &[u8]) -> IResult<&[u8], Class> {
+    let (i, c) = be_u16(i)?;
+    Ok((i, Class::from(c)))
+}
 
-    fn query_1() -> Message {
-        let question = Question::new("google.com.", QType::ByType(Type::A), Class::Internet)
-            .unwrap();
-        Message::query(2, true, &[question])
-    }
+fn parse_type(i: &[u8]) -> IResult<&[u8], Type> {
+    let (i, t) = be_u16(i)?;
+    Ok((i, Type::from(t)))
+}
 
-    #[test]
-    fn parse_query_1() {
-        let data = include_bytes!("../assets/captures/dns_1_query.bin");
-        let msg = query_1();
-        assert_eq!(do_parse_message(&data[..]), Done(&b""[..], msg));
-    }
+//                                 1  1  1  1  1  1
+//   0  1  2  3  4  5  6  7  8  9  0  1  2  3  4  5
+// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+// |                                               |
+// /                                               /
+// /                      NAME                     /
+// |                                               |
+// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+// |                      TYPE                     |
+// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+// |                     CLASS                     |
+// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+// |                      TTL                      |
+// |                                               |
+// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+// |                   RDLENGTH                    |
+// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--|
+// /                     RDATA                     /
+// /                                               /
+// +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 
-    #[test]
-    fn parse_response_1() {
-        let data = include_bytes!("../assets/captures/dns_1_response.bin");
-        let mut msg = Message::response(query_1(), true);
-        msg.push_answer(ResourceRecord::A {
-                            name: "google.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 299,
-                            addr: "172.217.3.206".parse().unwrap(),
-                        });
-        assert_eq!(do_parse_message(&data[..]), Done(&b""[..], msg));
-    }
-
-    fn query_2() -> Message {
-        let question = Question::new("google.com.", QType::ByType(Type::AAAA), Class::Internet)
-            .unwrap();
-        Message::query(3, true, &[question])
-    }
-
-    #[test]
-    fn parse_query_2() {
-        let data = include_bytes!("../assets/captures/dns_2_query.bin");
-        let msg = query_2();
-        assert_eq!(do_parse_message(&data[..]), Done(&b""[..], msg));
-    }
-
-    #[test]
-    fn parse_response_2() {
-        let data = include_bytes!("../assets/captures/dns_2_response.bin");
-        let mut msg = Message::response(query_2(), true);
-        msg.push_answer(ResourceRecord::AAAA {
-                            name: "google.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 299,
-                            addr: "2607:f8b0:400a:809::200e".parse().unwrap(),
-                        });
-        assert_eq!(do_parse_message(&data[..]), Done(&b""[..], msg));
-    }
-
-    fn query_3() -> Message {
-        let question = Question::new("tile-service.weather.microsoft.com.",
-                                     QType::ByType(Type::AAAA),
-                                     Class::Internet)
-                .unwrap();
-        Message::query(0xda64, true, &[question])
-    }
-
-    #[test]
-    fn parse_query_3() {
-        let data = include_bytes!("../assets/captures/dns_3_query.bin");
-        let msg = query_3();
-        assert_eq!(do_parse_message(&data[..]), Done(&b""[..], msg));
-    }
-
-    #[test]
-    fn parse_response_3() {
-        let data = include_bytes!("../assets/captures/dns_3_response.bin");
-        let mut msg = Message::response(query_3(), true);
-        msg.push_answer(ResourceRecord::CNAME {
-                            name: "tile-service.weather.microsoft.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 808,
-                            cname: "wildcard.weather.microsoft.com.edgekey.net.".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::CNAME {
-                            name: "wildcard.weather.microsoft.com.edgekey.net.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 466,
-                            cname: "e7070.g.akamaiedge.net.".parse().unwrap(),
-                        });
-        msg.push_authority(ResourceRecord::SOA {
-                               name: "g.akamaiedge.net.".parse().unwrap(),
-                               class: Class::Internet,
-                               ttl: 954,
-                               mname: "n0g.akamaiedge.net.".parse().unwrap(),
-                               rname: "hostmaster.akamai.com.".parse().unwrap(),
-                               serial: 1484377525,
-                               refresh: 1000,
-                               retry: 1000,
-                               expire: 1000,
-                               minimum: 1800,
-                           });
-        println!("Size: {}",
-                 do_parse_message(&data[..])
-                     .unwrap()
-                     .1
-                     .answers
-                     .len());
-        assert_eq!(do_parse_message(&data[..]), Done(&b""[..], msg));
-    }
-
-    fn query_4() -> Message {
-        let question = Question::new("gmail.com.", QType::Any, Class::Internet).unwrap();
-        let mut msg = Message::query(0x60ff, true, &[question]);
-        msg.push_additional(ResourceRecord::OPT {
-                                payload_size: 4096,
-                                extended_rcode: 0,
-                                version: 0,
-                                dnssec_ok: false,
-                                data: vec![],
-                            });
-        msg
-    }
-
-    #[test]
-    fn parse_query_4() {
-        let data = include_bytes!("../assets/captures/dns_4_query.bin");
-        let msg = query_4();
-        assert_eq!(do_parse_message(&data[..]), Done(&b""[..], msg));
-    }
-
-    #[test]
-    fn parse_response_4() {
-        let data = include_bytes!("../assets/captures/dns_4_response.bin");
-        let mut msg = Message::response(query_4(), true);
-        msg.push_additional(ResourceRecord::OPT {
-                                payload_size: 512,
-                                extended_rcode: 0,
-                                version: 0,
-                                dnssec_ok: false,
-                                data: vec![],
-                            });
-        msg.push_answer(ResourceRecord::A {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 299,
-                            addr: "216.58.216.165".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::AAAA {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 299,
-                            addr: "2607:f8b0:400a:807::2005".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::MX {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 3599,
-                            preference: 20,
-                            exchange: "alt2.gmail-smtp-in.l.google.com.".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::NS {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 86399,
-                            ns_name: "ns3.google.com.".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::NS {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 86399,
-                            ns_name: "ns4.google.com.".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::SOA {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 59,
-                            mname: "ns3.google.com.".parse().unwrap(),
-                            rname: "dns-admin.google.com.".parse().unwrap(),
-                            serial: 144520436,
-                            refresh: 900,
-                            retry: 900,
-                            expire: 1800,
-                            minimum: 60,
-                        });
-        msg.push_answer(ResourceRecord::NS {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 86399,
-                            ns_name: "ns1.google.com.".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::TXT {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 299,
-                            data: vec![String::from("v=spf1 redirect=_spf.google.com")],
-                        });
-        msg.push_answer(ResourceRecord::MX {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 3599,
-                            preference: 30,
-                            exchange: "alt3.gmail-smtp-in.l.google.com.".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::NS {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 86399,
-                            ns_name: "ns2.google.com.".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::MX {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 3599,
-                            preference: 40,
-                            exchange: "alt4.gmail-smtp-in.l.google.com.".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::MX {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 3599,
-                            preference: 10,
-                            exchange: "alt1.gmail-smtp-in.l.google.com.".parse().unwrap(),
-                        });
-        msg.push_answer(ResourceRecord::MX {
-                            name: "gmail.com.".parse().unwrap(),
-                            class: Class::Internet,
-                            ttl: 3599,
-                            preference: 5,
-                            exchange: "gmail-smtp-in.l.google.com.".parse().unwrap(),
-                        });
-        let (out, parsed) = do_parse_message(&data[..]).unwrap();
-        assert_eq!(parsed.questions, msg.questions);
-        for i in 0..13 {
-            assert_eq!(parsed.answers[i], msg.answers[i]);
+fn parse_rr<'a>(data: &'a [u8]) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], ResourceRecord> {
+    |i| -> IResult<&[u8], ResourceRecord> {
+        let (i, (name, rtype, class, ttl)) = tuple((parse_name(data), parse_type, parse_class, be_u32))(i)?;
+        match rtype {
+            Type::A => {
+                let (i, (_, addr)) = tuple((tag([0u8, 4u8]), be_u32))(i)?;
+                Ok((i, ResourceRecord::A { name, class, ttl: ttl as i32, addr: addr.into() }))
+            }
+            Type::AAAA => {
+                let (i, (_, addr)) = tuple((tag([0u8, 16u8]), be_u128))(i)?;
+                Ok((i, ResourceRecord::AAAA { name, class, ttl: ttl as i32, addr: addr.into() }))
+            }
+            // TODO: Parse all known types
+            _ => {
+                let (i, data) = length_data(be_u16)(i)?;
+                Ok((i, ResourceRecord::Unknown { name, rtype, class, ttl: ttl as i32, data: data.into() }))
+            }
         }
-        assert_eq!(parsed.answers, msg.answers);
-        assert_eq!(parsed.authorities, msg.authorities);
-        assert_eq!(parsed.additionals, msg.additionals);
-        assert_eq!(out, &b""[..]);
     }
-
 }

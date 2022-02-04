@@ -1,8 +1,5 @@
 //! Base types for dealing with resource records.
 
-// nom macro usage generates these warnings for a lot of parser functions in this file.
-#![cfg_attr(feature = "dev", allow(needless_lifetimes))]
-
 use errors::{be_u8, be_u16, be_u32, be_i32, take, ParseError};
 use names::{Name, parse_name};
 

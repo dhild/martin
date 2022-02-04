@@ -1,12 +1,9 @@
 use byteorder::{BigEndian, WriteBytesExt};
-use errors::ParseError;
-use names::{Name, parse_name, write_name, NameParseError};
-use nom::{IResult, Needed};
-use nom::IResult::*;
-use rr::{Class, Type};
+use crate::names::{Name, NameParseError};
+use crate::rr::{Class, Type};
 use std::convert::From;
 use std::io;
-use std::io::Write;
+use std::io::{Cursor, Write};
 
 /// The scope of query to execute.
 #[derive(Debug,Clone,PartialEq,Copy)]
@@ -20,37 +17,29 @@ pub enum QType {
 /// Describes a DNS query.
 #[derive(Debug,Clone,PartialEq)]
 pub struct Question {
-    qname: Name,
-    qtype: QType,
-    qclass: Class,
+    pub qname: Name,
+    pub qtype: QType,
+    pub qclass: Class,
 }
 
 impl Question {
     /// Create a `Question`.
-    pub fn new(qname: &str, qtype: QType, qclass: Class) -> Result<Question, NameParseError> {
+    pub fn new(qname: &str, qtype: QType) -> Result<Question, NameParseError> {
         qname.parse().map(|name: Name| {
             Question {
                 qname: name,
-                qtype: qtype,
-                qclass: qclass,
+                qtype,
+                qclass: Class::Internet,
             }
         })
     }
-}
-
-pub fn parse_question<'a>(i: &'a [u8], data: &'a [u8]) -> IResult<&'a [u8], Question, ParseError> {
-    let (i, name) = try_parse!(i, apply!(parse_name, data));
-    if i.len() < 4 {
-        return Incomplete(Needed::Size(4));
+    pub fn write_to<T>(&self, cursor: &mut Cursor<T>) -> io::Result<()> where Cursor<T>: Write {
+        self.qname.write_to(cursor)?;
+        cursor.write_u16::<BigEndian>(self.qtype.into())?;
+        cursor.write_u16::<BigEndian>(self.qclass.into())?;
+        Ok(())
     }
-    let qtype = QType::from(((i[0] as u16) << 8) + i[1] as u16);
-    let qclass = Class::from(((i[2] as u16) << 8) + i[3] as u16);
-    Done(&i[4..],
-         Question {
-             qname: name,
-             qtype: qtype,
-             qclass: qclass,
-         })
+
 }
 
 impl From<u16> for QType {
@@ -69,11 +58,4 @@ impl From<QType> for u16 {
             QType::ByType(t) => t.into(),
         }
     }
-}
-
-pub fn write_question(question: &Question, writer: &mut Write) -> io::Result<()> {
-    write_name(&question.qname, writer)?;
-    writer.write_u16::<BigEndian>(question.qtype.into())?;
-    writer.write_u16::<BigEndian>(question.qclass.into())?;
-    Ok(())
 }

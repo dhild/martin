@@ -1,4 +1,5 @@
 [package]
+edition = "2021"
 name = "martin"
 version = "0.1.0"
 authors = ["D. Ryan Hild <d.ryan.hild@gmail.com>"]
@@ -12,9 +13,11 @@ keywords = ["dns"]
 categories = []
 
 [dependencies]
-clippy = {version = "*", optional = true}
-nom = "^2.2.0"
+nom = "7"
 byteorder = "1"
+thiserror = "1"
+anyhow = "1"
+clap = {version = "3", features = ["derive"]}
 
 [dev-dependencies]
 log4rs = "^0.6"
